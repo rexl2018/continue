@@ -37,17 +37,25 @@ class FileSystemIde implements IDE {
       remoteConfigServerUrl: undefined,
       remoteConfigSyncPeriod: 60,
       userToken: "",
+      enableControlServerBeta: false,
+      pauseCodebaseIndexOnStart: false,
+      enableDebugLogs: false,
     };
   }
   async getGitHubAuthToken(): Promise<string | undefined> {
     return undefined;
   }
-  getLastModified(files: string[]): Promise<{ [path: string]: number }> {
-    return new Promise((resolve) => {
-      resolve({
-        [files[0]]: 1234567890,
-      });
-    });
+  async getLastModified(files: string[]): Promise<{ [path: string]: number }> {
+    const result: { [path: string]: number } = {};
+    for (const file of files) {
+      try {
+        const stats = fs.statSync(file);
+        result[file] = stats.mtimeMs;
+      } catch (error) {
+        console.error(`Error getting last modified time for ${file}:`, error);
+      }
+    }
+    return result;
   }
   getGitRootPath(dir: string): Promise<string | undefined> {
     return Promise.resolve(dir);
@@ -60,8 +68,8 @@ class FileSystemIde implements IDE {
         dirent.isDirectory()
           ? (2 as FileType.Directory)
           : dirent.isSymbolicLink()
-            ? (64 as FileType.SymbolicLink)
-            : (1 as FileType.File),
+          ? (64 as FileType.SymbolicLink)
+          : (1 as FileType.File),
       ]);
     return Promise.resolve(all);
   }
@@ -75,8 +83,13 @@ class FileSystemIde implements IDE {
     return Promise.resolve(undefined);
   }
 
-  getTags(artifactId: string): Promise<IndexTag[]> {
-    return Promise.resolve([]);
+  async getTags(artifactId: string): Promise<IndexTag[]> {
+    const directory =(await this.getWorkspaceDirs())[0]
+    return [{
+      artifactId,
+      branch: await this.getBranch(directory),
+      directory
+    }]
   }
 
   getIdeInfo(): Promise<IdeInfo> {

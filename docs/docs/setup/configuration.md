@@ -130,14 +130,14 @@ In `config.json`, you'll find the `models` property, a list of the models that y
 ```json
 "models": [
     {
-        "title": "GPT-4",
+        "title": "GPT-4o",
         "provider": "free-trial",
-        "model": "gpt-4"
+        "model": "gpt-4o"
     },
     {
-        "title": "GPT-3.5-Turbo",
+        "title": "GPT-4o Mini",
         "provider": "free-trial",
-        "model": "gpt-3.5-turbo"
+        "model": "gpt-4o-mini"
     }
 ]
 ```
@@ -267,7 +267,7 @@ function modifyConfig(config: Config): Config {
 }
 ```
 
-This exact function and a few other default implementations are available in [`continuedev.libs.llm.prompts.chat`](https://github.com/continuedev/continue/blob/main/server/continuedev/libs/llm/prompts/chat.py).
+This exact function and a few other default implementations are available in [`core/llm/templates/chat.ts`](https://github.com/continuedev/continue/blob/main/core/llm/templates/chat.ts).
 
 ## Customizing the /edit Prompt
 
@@ -295,7 +295,7 @@ You can find all existing templates for /edit in [`core/llm/templates/edit.ts`](
 
 ## Defining a Custom LLM Provider
 
-If you are using an LLM API that isn't already [supported by Continue](./select-provider.md), and is not an OpenAI-compatible API, you'll need to define a `CustomLLM` object in `config.ts`. This object only requires one of (or both of) a `streamComplete` or `streamChat` function. Here is an example:
+If you are using an LLM API that isn't already [supported by Continue](./model-providers.md), and is not an OpenAI-compatible API, you'll need to define a `CustomLLM` object in `config.ts`. This object only requires one of (or both of) a `streamComplete` or `streamChat` function. Here is an example:
 
 ```typescript title="~/.continue/config.ts"
 export function modifyConfig(config: Config): Config {
@@ -320,5 +320,28 @@ export function modifyConfig(config: Config): Config {
     },
   });
   return config;
+}
+```
+
+## Customizing the LLM capability
+
+Sometimes when you use certain third-party interface providers, such as [one api](https://github.com/songquanpeng/one-api), [openRouter](https://openrouter.ai/), etc., they offer openai-compatible interfaces, but the model names are highly different.
+
+Continue cannot determine the capabilities of the model, whether it supports uploading images or files, etc. You can clearly inform Continue about the capabilities of the model.
+
+```typescript title="~/.continue/config.json"
+{
+  "models": [
+    {
+      "title": "kimi",
+      "provider": "openai",
+      "model": "moonshot-kimi",
+      "contextLength": 8192,
+      "apiBase": "https://any-your-thrid-part-OpenAI-compatible-api-provider/v1",
+      "capabilities": {
+        "uploadImage": true
+      }
+    }
+  ]
 }
 ```

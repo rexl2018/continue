@@ -1,46 +1,44 @@
 import { v4 as uuidv4 } from "uuid";
-import type {
-  ContextItemId,
-  IDE,
-  IndexingProgressUpdate,
-  SiteIndexingConfig,
-} from ".";
-import { CompletionProvider } from "./autocomplete/completionProvider.js";
-import { ConfigHandler } from "./config/ConfigHandler.js";
-import { IConfigHandler } from "./config/IConfigHandler";
+import type { ContextItemId, IDE, IndexingProgressUpdate } from ".";
+import { CompletionProvider } from "./autocomplete/completionProvider";
+import { ConfigHandler } from "./config/ConfigHandler";
 import {
   setupApiKeysMode,
   setupFreeTrialMode,
   setupLocalAfterFreeTrial,
   setupLocalMode,
-} from "./config/onboarding.js";
-import { createNewPromptFile } from "./config/promptFile.js";
-import { addModel, addOpenAIKey, deleteModel } from "./config/util.js";
-import { ContinueServerClient } from "./continueServer/stubs/client.js";
-import { CodebaseIndexer, PauseToken } from "./indexing/CodebaseIndexer.js";
-import { DocsService } from "./indexing/docs/DocsService";
-import TransformersJsEmbeddingsProvider from "./indexing/embeddings/TransformersJsEmbeddingsProvider.js";
-import Ollama from "./llm/llms/Ollama.js";
+} from "./config/onboarding";
+import { createNewPromptFile } from "./config/promptFile";
+import { addModel, addOpenAIKey, deleteModel } from "./config/util";
+import { recentlyEditedFilesCache } from "./context/retrieval/recentlyEditedFilesCache";
+import { ContinueServerClient } from "./continueServer/stubs/client";
+import { getAuthUrlForTokenPage } from "./control-plane/auth/index";
+import { ControlPlaneClient } from "./control-plane/client";
+import { CodebaseIndexer, PauseToken } from "./indexing/CodebaseIndexer";
+import DocsService from "./indexing/docs/DocsService";
+import Ollama from "./llm/llms/Ollama";
 import type { FromCoreProtocol, ToCoreProtocol } from "./protocol";
-import { GlobalContext } from "./util/GlobalContext.js";
-import { logDevData } from "./util/devdata.js";
-import { DevDataSqliteDb } from "./util/devdataSqlite.js";
-import { fetchwithRequestOptions } from "./util/fetchWithOptions.js";
-import historyManager from "./util/history.js";
+import { GlobalContext } from "./util/GlobalContext";
+import { logDevData } from "./util/devdata";
+import { DevDataSqliteDb } from "./util/devdataSqlite";
+import { fetchwithRequestOptions } from "./util/fetchWithOptions";
+import historyManager from "./util/history";
 import type { IMessenger, Message } from "./util/messenger";
-import { editConfigJson } from "./util/paths.js";
-import { Telemetry } from "./util/posthog.js";
-import { streamDiffLines } from "./util/verticalEdit.js";
+import { editConfigJson } from "./util/paths";
+import { Telemetry } from "./util/posthog";
+import { streamDiffLines } from "./util/verticalEdit";
 
 export class Core {
   // implements IMessenger<ToCoreProtocol, FromCoreProtocol>
-  configHandler: IConfigHandler;
+  configHandler: ConfigHandler;
   codebaseIndexerPromise: Promise<CodebaseIndexer>;
   completionProvider: CompletionProvider;
   continueServerClientPromise: Promise<ContinueServerClient>;
   indexingState: IndexingProgressUpdate;
+  controlPlaneClient: ControlPlaneClient;
+  private docsService: DocsService;
   private globalContext = new GlobalContext();
-  private docsService = DocsService.getInstance();
+
   private readonly indexingPauseToken = new PauseToken(
     this.globalContext.get("indexingPaused") === true,
   );
@@ -64,6 +62,14 @@ export class Core {
     return this.messenger.invoke(messageType, data);
   }
 
+  send<T extends keyof FromCoreProtocol>(
+    messageType: T,
+    data: FromCoreProtocol[T][0],
+    messageId?: string,
+  ): string {
+    return this.messenger.send(messageType, data);
+  }
+
   // TODO: It shouldn't actually need an IDE type, because this can happen
   // through the messenger (it does in the case of any non-VS Code IDEs already)
   constructor(
@@ -72,14 +78,33 @@ export class Core {
     private readonly onWrite: (text: string) => Promise<void> = async () => {},
   ) {
     this.indexingState = { status: "loading", desc: "loading", progress: 0 };
+
     const ideSettingsPromise = messenger.request("getIdeSettings", undefined);
+    const sessionInfoPromise = messenger.request("getControlPlaneSessionInfo", {
+      silent: true,
+    });
+
+    this.controlPlaneClient = new ControlPlaneClient(sessionInfoPromise);
+
     this.configHandler = new ConfigHandler(
       this.ide,
       ideSettingsPromise,
       this.onWrite,
+      this.controlPlaneClient,
     );
+
+    this.docsService = DocsService.createSingleton(
+      this.configHandler,
+      this.ide,
+      this.messenger,
+    );
+
     this.configHandler.onConfigUpdate(
       (() => this.messenger.send("configUpdate", undefined)).bind(this),
+    );
+
+    this.configHandler.onDidChangeAvailableProfiles((profiles) =>
+      this.messenger.send("didChangeAvailableProfiles", { profiles }),
     );
 
     // Codebase Indexer and ContinueServerClient depend on IdeSettings
@@ -108,9 +133,21 @@ export class Core {
           continueServerClient,
         ),
       );
-      this.ide
-        .getWorkspaceDirs()
-        .then((dirs) => this.refreshCodebaseIndex(dirs));
+
+      // Index on initialization
+      this.ide.getWorkspaceDirs().then(async (dirs) => {
+        // Respect pauseCodebaseIndexOnStart user settings
+        if (ideSettings.pauseCodebaseIndexOnStart) {
+          await this.messenger.request("indexProgress", {
+            progress: 100,
+            desc: "Initial Indexing Skipped",
+            status: "paused",
+          });
+          return;
+        }
+
+        this.refreshCodebaseIndex(dirs);
+      });
     });
 
     const getLlm = async () => {
@@ -134,6 +171,9 @@ export class Core {
 
     this.messenger.onError((err) => {
       console.error(err);
+      Telemetry.capture("core_messenger_error", {
+        message: err.message,
+      });
       this.messenger.request("errorPopup", { message: err.message });
     });
 
@@ -163,12 +203,15 @@ export class Core {
     on("history/list", (msg) => {
       return historyManager.list(msg.data);
     });
+
     on("history/delete", (msg) => {
       historyManager.delete(msg.data.id);
     });
+
     on("history/load", (msg) => {
       return historyManager.load(msg.data.id);
     });
+
     on("history/save", (msg) => {
       historyManager.save(msg.data);
     });
@@ -184,14 +227,17 @@ export class Core {
       addModel(model);
       this.configHandler.reloadConfig();
     });
+
     on("config/addOpenAiKey", (msg) => {
       addOpenAIKey(msg.data);
       this.configHandler.reloadConfig();
     });
+
     on("config/deleteModel", (msg) => {
       deleteModel(msg.data.title);
       this.configHandler.reloadConfig();
     });
+
     on("config/newPromptFile", async (msg) => {
       createNewPromptFile(
         this.ide,
@@ -199,48 +245,61 @@ export class Core {
       );
       this.configHandler.reloadConfig();
     });
+
     on("config/reload", (msg) => {
       this.configHandler.reloadConfig();
       return this.configHandler.getSerializedConfig();
     });
+
     on("config/ideSettingsUpdate", (msg) => {
       this.configHandler.updateIdeSettings(msg.data);
+    });
+    on("config/listProfiles", (msg) => {
+      return this.configHandler.listProfiles();
     });
 
     // Context providers
     on("context/addDocs", async (msg) => {
-      const siteIndexingConfig: SiteIndexingConfig = {
-        startUrl: msg.data.startUrl,
-        rootUrl: msg.data.rootUrl,
-        title: msg.data.title,
-        maxDepth: msg.data.maxDepth,
-        faviconUrl: new URL("/favicon.ico", msg.data.rootUrl).toString(),
-      };
+      let hasFailed = false;
 
-      for await (const _ of this.docsService.indexAndAdd(
-        siteIndexingConfig,
-        new TransformersJsEmbeddingsProvider(),
-      )) {
+      for await (const result of this.docsService.indexAndAdd(msg.data)) {
+        if (result.status === "failed") {
+          hasFailed = true;
+          break;
+        }
       }
-      this.ide.infoPopup(`Successfully indexed ${msg.data.title}`);
-      this.messenger.send("refreshSubmenuItems", undefined);
+
+      if (hasFailed) {
+        this.ide.infoPopup(`Failed to index ${msg.data.startUrl}`);
+      } else {
+        this.ide.infoPopup(`Successfully indexed ${msg.data.startUrl}`);
+        this.messenger.send("refreshSubmenuItems", undefined);
+      }
     });
+
     on("context/removeDocs", async (msg) => {
-      const baseUrl = msg.data.baseUrl;
-      await this.docsService.delete(baseUrl);
+      await this.docsService.delete(msg.data.startUrl);
       this.messenger.send("refreshSubmenuItems", undefined);
     });
+
+    on("context/indexDocs", async (msg) => {
+      await this.docsService.indexAllDocs(msg.data.reIndex);
+      this.messenger.send("refreshSubmenuItems", undefined);
+    });
+
     on("context/loadSubmenuItems", async (msg) => {
       const config = await this.config();
-      const items = config.contextProviders
+      const items = await config.contextProviders
         ?.find((provider) => provider.description.title === msg.data.title)
         ?.loadSubmenuItems({
+          config,
           ide: this.ide,
           fetch: (url, init) =>
             fetchwithRequestOptions(url, init, config.requestOptions),
         });
       return items || [];
     });
+
     on("context/getContextItems", async (msg) => {
       const { name, query, fullInput, selectedCode } = msg.data;
       const config = await this.config();
@@ -257,7 +316,9 @@ export class Core {
           providerTitle: provider.description.title,
           itemId: uuidv4(),
         };
+
         const items = await provider.getContextItems(query, {
+          config,
           llm,
           embeddingsProvider: config.embeddingsProvider,
           fullInput,
@@ -268,9 +329,13 @@ export class Core {
             fetchwithRequestOptions(url, init, config.requestOptions),
         });
 
-        Telemetry.capture("useContextProvider", {
-          name: provider.description.title,
-        });
+        Telemetry.capture(
+          "useContextProvider",
+          {
+            name: provider.description.title,
+          },
+          true,
+        );
 
         return items.map((item) => ({
           ...item,
@@ -282,12 +347,15 @@ export class Core {
       }
     });
 
-    on("config/getBrowserSerialized", (msg) => {
-      return this.configHandler.getSerializedConfig();
+    on("config/getSerializedProfileInfo", async (msg) => {
+      return {
+        config: await this.configHandler.getSerializedConfig(),
+        profileId: this.configHandler.currentProfile.profileId,
+      };
     });
 
     async function* llmStreamChat(
-      configHandler: IConfigHandler,
+      configHandler: ConfigHandler,
       abortedMessageIds: Set<string>,
       msg: Message<ToCoreProtocol["llm/streamChat"][0]>,
     ) {
@@ -301,6 +369,7 @@ export class Core {
         if (abortedMessageIds.has(msg.messageId)) {
           abortedMessageIds.delete(msg.messageId);
           next = await gen.return({
+            modelTitle: model.title ?? model.model,
             completion: "",
             prompt: "",
             completionOptions: {
@@ -322,7 +391,7 @@ export class Core {
     );
 
     async function* llmStreamComplete(
-      configHandler: IConfigHandler,
+      configHandler: ConfigHandler,
       abortedMessageIds: Set<string>,
 
       msg: Message<ToCoreProtocol["llm/streamComplete"][0]>,
@@ -337,6 +406,7 @@ export class Core {
         if (abortedMessageIds.has(msg.messageId)) {
           abortedMessageIds.delete(msg.messageId);
           next = await gen.return({
+            modelTitle: model.title ?? model.model,
             completion: "",
             prompt: "",
             completionOptions: {
@@ -388,7 +458,7 @@ export class Core {
     });
 
     async function* runNodeJsSlashCommand(
-      configHandler: IConfigHandler,
+      configHandler: ConfigHandler,
       abortedMessageIds: Set<string>,
       msg: Message<ToCoreProtocol["command/run"][0]>,
       messenger: IMessenger<ToCoreProtocol, FromCoreProtocol>,
@@ -413,9 +483,13 @@ export class Core {
         throw new Error(`Unknown slash command ${slashCommandName}`);
       }
 
-      Telemetry.capture("useSlashCommand", {
-        name: slashCommandName,
-      });
+      Telemetry.capture(
+        "useSlashCommand",
+        {
+          name: slashCommandName,
+        },
+        true,
+      );
 
       const checkActiveInterval = setInterval(() => {
         if (abortedMessageIds.has(msg.messageId)) {
@@ -477,7 +551,7 @@ export class Core {
     });
 
     async function* streamDiffLinesGenerator(
-      configHandler: IConfigHandler,
+      configHandler: ConfigHandler,
       abortedMessageIds: Set<string>,
       msg: Message<ToCoreProtocol["streamDiffLines"][0]>,
     ) {
@@ -566,7 +640,7 @@ export class Core {
     });
     on("index/forceReIndex", async (msg) => {
       const dirs = msg.data ? [msg.data] : await this.ide.getWorkspaceDirs();
-      this.refreshCodebaseIndex(dirs);
+      await this.refreshCodebaseIndex(dirs);
     });
     on("index/setPaused", (msg) => {
       new GlobalContext().update("indexingPaused", msg.data);
@@ -578,6 +652,22 @@ export class Core {
       if (this.indexingState.status !== "loading") {
         this.messenger.request("indexProgress", this.indexingState);
       }
+    });
+
+    on("didChangeSelectedProfile", (msg) => {
+      this.configHandler.setSelectedProfile(msg.data.id);
+      this.configHandler.reloadConfig();
+    });
+    on("didChangeControlPlaneSessionInfo", async (msg) => {
+      this.configHandler.updateControlPlaneSessionInfo(msg.data.sessionInfo);
+    });
+    on("auth/getAuthUrl", async (msg) => {
+      const url = await getAuthUrlForTokenPage();
+      return { url };
+    });
+
+    on("didChangeActiveTextEditor", ({ data: { filepath } }) => {
+      recentlyEditedFilesCache.set(filepath, filepath);
     });
   }
 
@@ -594,6 +684,18 @@ export class Core {
     )) {
       this.messenger.request("indexProgress", update);
       this.indexingState = update;
+
+      if (update.status === "failed") {
+        Telemetry.capture(
+          "indexing_error",
+          {
+            error: update.desc,
+          },
+          false,
+        );
+      }
     }
+
+    this.messenger.send("refreshSubmenuItems", undefined);
   }
 }

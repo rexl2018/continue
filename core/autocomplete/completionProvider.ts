@@ -1,10 +1,9 @@
-import Handlebars from "handlebars";
 import ignore from "ignore";
 import OpenAI from "openai";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { RangeInFileWithContents } from "../commands/util.js";
-import { IConfigHandler } from "../config/IConfigHandler.js";
+import { ConfigHandler } from "../config/ConfigHandler.js";
 import { TRIAL_FIM_MODEL } from "../config/onboarding.js";
 import { streamLines } from "../diff/util.js";
 import {
@@ -29,6 +28,7 @@ import AutocompleteLruCache from "./cache.js";
 import {
   noFirstCharNewline,
   onlyWhitespaceAfterEndOfLine,
+  stopAtStopTokens,
 } from "./charStream.js";
 import {
   constructAutocompletePrompt,
@@ -50,6 +50,9 @@ import { AutocompleteSnippet } from "./ranking.js";
 import { RecentlyEditedRange } from "./recentlyEdited.js";
 import { getTemplateForModel } from "./templates.js";
 import { GeneratorReuseManager } from "./util.js";
+// @prettier-ignore
+import Handlebars from "handlebars";
+import { getConfigJsonPath } from "../util/paths.js";
 
 export interface AutocompleteInput {
   completionId: string;
@@ -145,7 +148,7 @@ export class CompletionProvider {
   private static lastUUID: string | undefined = undefined;
 
   constructor(
-    private readonly configHandler: IConfigHandler,
+    private readonly configHandler: ConfigHandler,
     private readonly ide: IDE,
     private readonly getLlm: () => Promise<ILLM | undefined>,
     private readonly _onError: (e: any) => void,
@@ -201,13 +204,17 @@ export class CompletionProvider {
       const outcome = this._outcomes.get(completionId)!;
       outcome.accepted = true;
       logDevData("autocomplete", outcome);
-      Telemetry.capture("autocomplete", {
-        accepted: outcome.accepted,
-        modelName: outcome.modelName,
-        modelProvider: outcome.modelProvider,
-        time: outcome.time,
-        cacheHit: outcome.cacheHit,
-      });
+      Telemetry.capture(
+        "autocomplete",
+        {
+          accepted: outcome.accepted,
+          modelName: outcome.modelName,
+          modelProvider: outcome.modelProvider,
+          time: outcome.time,
+          cacheHit: outcome.cacheHit,
+        },
+        true,
+      );
       this._outcomes.delete(completionId);
 
       this.bracketMatchingService.handleAcceptedCompletion(
@@ -243,6 +250,11 @@ export class CompletionProvider {
         ...config.tabAutocompleteOptions,
       };
 
+      // Check whether we're in the continue config.json file
+      if (input.filepath === getConfigJsonPath()) {
+        return undefined;
+      }
+
       // Check whether autocomplete is disabled for this file
       if (options.disableInFiles) {
         // Relative path needed for `ignore`
@@ -260,7 +272,8 @@ export class CompletionProvider {
           filepath = getBasename(filepath);
         }
 
-        const pattern = ignore().add(options.disableInFiles);
+        // @ts-ignore
+        const pattern = ignore.default().add(options.disableInFiles);
         if (pattern.ignores(filepath)) {
           return undefined;
         }
@@ -358,9 +371,13 @@ export class CompletionProvider {
       outcome.accepted = false;
       logDevData("autocomplete", outcome);
       const { prompt, completion, ...restOfOutcome } = outcome;
-      Telemetry.capture("autocomplete", {
-        ...restOfOutcome,
-      });
+      Telemetry.capture(
+        "autocomplete",
+        {
+          ...restOfOutcome,
+        },
+        true,
+      );
       this._logRejectionTimeouts.delete(completionId);
     }, COUNT_COMPLETION_REJECTED_AFTER);
     this._outcomes.set(completionId, outcome);
@@ -441,12 +458,12 @@ export class CompletionProvider {
     if (
       !shownGptClaudeWarning &&
       nonAutocompleteModels.some((model) => llm.model.includes(model)) &&
-      !llm.model.includes("deepseek") &&
-      !llm.model.includes("codestral")
+      !llm.model.toLowerCase().includes("deepseek") &&
+      !llm.model.toLowerCase().includes("codestral")
     ) {
       shownGptClaudeWarning = true;
       throw new Error(
-        `Warning: ${llm.model} is not trained for tab-autocomplete, and will result in low-quality suggestions. See the docs to learn more about why: https://docs.continue.dev/walkthroughs/tab-autocomplete#i-want-better-completions-should-i-use-gpt-4`,
+        `Warning: ${llm.model} is not trained for tab-autocomplete, and will result in low-quality suggestions. See the docs to learn more about why: https://docs.continue.dev/features/tab-autocomplete#i-want-better-completions-should-i-use-gpt-4`,
       );
     }
 
@@ -572,10 +589,18 @@ export class CompletionProvider {
         suffix,
         filename,
         reponame,
+        language: lang.name,
       });
     } else {
       // Let the template function format snippets
-      prompt = template(prefix, suffix, filepath, reponame, snippets);
+      prompt = template(
+        prefix,
+        suffix,
+        filepath,
+        reponame,
+        lang.name,
+        snippets,
+      );
     }
 
     // Completion
@@ -652,6 +677,7 @@ export class CompletionProvider {
         lang.endOfLine,
         fullStop,
       );
+      charGenerator = stopAtStopTokens(charGenerator, stop);
       charGenerator = this.bracketMatchingService.stopOnUnmatchedClosingBracket(
         charGenerator,
         prefix,

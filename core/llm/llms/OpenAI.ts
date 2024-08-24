@@ -4,7 +4,7 @@ import {
   LLMOptions,
   ModelProvider,
 } from "../../index.js";
-import { stripImages } from "../countTokens.js";
+import { stripImages } from "../images.js";
 import { BaseLLM } from "../index.js";
 import { streamSse } from "../stream.js";
 
@@ -36,6 +36,7 @@ const CHAT_ONLY_MODELS = [
   "gpt-4-vision",
   "gpt-4-0125-preview",
   "gpt-4-1106-preview",
+  "gpt-4o-mini",
 ];
 
 class OpenAI extends BaseLLM {
@@ -103,13 +104,13 @@ class OpenAI extends BaseLLM {
         this.maxStopWords !== undefined
           ? options.stop?.slice(0, this.maxStopWords)
           : url.host === "api.deepseek.com"
-            ? options.stop?.slice(0, 16)
-            : url.port === "1337" ||
-                url.host === "api.openai.com" ||
-                url.host === "api.groq.com" ||
-                this.apiType === "azure"
-              ? options.stop?.slice(0, 4)
-              : options.stop,
+          ? options.stop?.slice(0, 16)
+          : url.port === "1337" ||
+            url.host === "api.openai.com" ||
+            url.host === "api.groq.com" ||
+            this.apiType === "azure"
+          ? options.stop?.slice(0, 4)
+          : options.stop,
     };
 
     return finalOptions;
@@ -138,7 +139,7 @@ class OpenAI extends BaseLLM {
     return completion;
   }
 
-  private _getEndpoint(
+  protected _getEndpoint(
     endpoint: "chat/completions" | "completions" | "models",
   ) {
     if (this.apiType === "azure") {

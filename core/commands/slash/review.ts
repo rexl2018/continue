@@ -1,5 +1,5 @@
 import { ChatMessage, SlashCommand } from "../../index.js";
-import { stripImages } from "../../llm/countTokens.js";
+import { stripImages } from "../../llm/images.js";
 
 const prompt = `
      Review the following code, focusing on design issues, algorithm issues, error handling issues, null pointer issues, index overflow issues, concurrency issues, coding style issue, etc. Provide feedback with these guidelines:

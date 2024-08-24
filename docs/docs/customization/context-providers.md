@@ -16,6 +16,14 @@ As an example, say you are working on solving a new GitHub Issue. You type '@iss
 
 To use any of the built-in context providers, open `~/.continue/config.json` and add it to the `contextProviders` list.
 
+### Files
+
+Type '@file' to reference any file in your current workspace.
+
+```json
+{ "name": "file" }
+```
+
 ### Code
 
 Type '@code' to reference specific functions or classes from throughout your project.
@@ -50,6 +58,28 @@ Type `@docs` to index and retrieve snippets from any documentation site. You can
 
 Continue also pre-indexes a number of common sites, listed [here](https://github.com/continuedev/continue/blob/main/core/indexing/docs/preIndexedDocs.ts). The embeddings for these sites are hosted by us, but downloaded for local use after the first time. All other indexing occurs entirely locally.
 
+#### Adding a Documentation Site via Configuration
+
+To add a documentation site via configuration, update the `config.json` file as follows:
+
+```json
+{
+  "name": "docs",
+  "params": {
+    "sites": [
+      {
+        "title": "ExampleDocs",
+        "startUrl": "https://exampledocs.com/docs",
+        "rootUrl": "https://exampledocs.com",
+        "maxDepth": 3 // Default
+      }
+    ]
+  }
+}
+```
+
+The docs are indexed when you modify the configuration file, unless indexing is disabled. If you want to manually trigger the indexing, you can use the command `Continue: Docs Index`. For force indexing, you can use the command `Continue: Docs Force Re-Index`. Note that these commands will work even if automatic indexing is disabled.
+
 ### Open Files
 
 Type '@open' to reference the contents of all of your open files. Set `onlyPinned` to `true` to only reference pinned files.
@@ -60,7 +90,7 @@ Type '@open' to reference the contents of all of your open files. Set `onlyPinne
 
 ### Codebase Retrieval
 
-Type '@codebase' to automatically retrieve the most relevant snippets from your codebase. Read more about indexing and retrieval [here](../walkthroughs/codebase-embeddings.md).
+Type '@codebase' to automatically retrieve the most relevant snippets from your codebase. Read more about indexing and retrieval [here](../features/codebase-embeddings.md).
 
 ```json
 { "name": "codebase" }
@@ -498,9 +528,7 @@ Continue exposes an API for registering context providers from a 3rd party VSCod
 
 ```json
 {
-  "extensionDependencies": [
-    "continue.continue"
-  ],
+  "extensionDependencies": ["continue.continue"]
 }
 ```
 
@@ -513,7 +541,6 @@ Here is an example:
 import * as vscode from "vscode";
 
 class MyCustomProvider implements IContextProvider {
-
   get description(): ContextProviderDescription {
     return {
       title: "custom",
@@ -525,7 +552,7 @@ class MyCustomProvider implements IContextProvider {
 
   async getContextItems(
     query: string,
-    extras: ContextProviderExtras
+    extras: ContextProviderExtras,
   ): Promise<ContextItem[]> {
     return [
       {
@@ -537,7 +564,7 @@ class MyCustomProvider implements IContextProvider {
   }
 
   async loadSubmenuItems(
-    args: LoadSubmenuItemsArgs
+    args: LoadSubmenuItemsArgs,
   ): Promise<ContextSubmenuItem[]> {
     return [];
   }
@@ -554,5 +581,4 @@ const continueApi = continueExt?.exports;
 
 // register your custom provider
 continueApi?.registerCustomContextProvider(customProvider);
-
 ```

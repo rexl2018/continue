@@ -1,16 +1,10 @@
+import { FromWebviewProtocol, ToWebviewProtocol } from "core/protocol";
 import { Message } from "core/util/messenger";
+import { Telemetry } from "core/util/posthog";
 import fs from "node:fs";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import * as vscode from "vscode";
-import {
-  ToCoreFromWebviewProtocol,
-  ToWebviewFromCoreProtocol,
-} from "../../../core/protocol/coreWebview";
-import {
-  ToIdeFromWebviewProtocol,
-  ToWebviewFromIdeProtocol,
-} from "../../../core/protocol/ideWebview";
 import { IMessenger } from "../../../core/util/messenger";
 import { getExtensionUri } from "./util/vscode";
 
@@ -32,19 +26,11 @@ export async function showTutorial() {
   await vscode.window.showTextDocument(doc, { preview: false });
 }
 
-export type ToCoreOrIdeFromWebviewProtocol = ToCoreFromWebviewProtocol &
-  ToIdeFromWebviewProtocol;
-type FullToWebviewFromIdeOrCoreProtocol = ToWebviewFromIdeProtocol &
-  ToWebviewFromCoreProtocol;
 export class VsCodeWebviewProtocol
-  implements
-    IMessenger<
-      ToCoreOrIdeFromWebviewProtocol,
-      FullToWebviewFromIdeOrCoreProtocol
-    >
+  implements IMessenger<FromWebviewProtocol, ToWebviewProtocol>
 {
   listeners = new Map<
-    keyof ToCoreOrIdeFromWebviewProtocol,
+    keyof FromWebviewProtocol,
     ((message: Message) => any)[]
   >();
 
@@ -58,13 +44,11 @@ export class VsCodeWebviewProtocol
     return id;
   }
 
-  on<T extends keyof ToCoreOrIdeFromWebviewProtocol>(
+  on<T extends keyof FromWebviewProtocol>(
     messageType: T,
     handler: (
-      message: Message<ToCoreOrIdeFromWebviewProtocol[T][0]>,
-    ) =>
-      | Promise<ToCoreOrIdeFromWebviewProtocol[T][1]>
-      | ToCoreOrIdeFromWebviewProtocol[T][1],
+      message: Message<FromWebviewProtocol[T][0]>,
+    ) => Promise<FromWebviewProtocol[T][1]> | FromWebviewProtocol[T][1],
   ): void {
     if (!this.listeners.has(messageType)) {
       this.listeners.set(messageType, []);
@@ -170,6 +154,14 @@ export class VsCodeWebviewProtocol
                 }
               });
           } else {
+            Telemetry.capture(
+              "webview_protocol_error",
+              {
+                messageType: msg.messageType,
+                errorMsg: message.split("\n\n")[0],
+              },
+              false,
+            );
             vscode.window
               .showErrorMessage(
                 message.split("\n\n")[0],
@@ -196,11 +188,11 @@ export class VsCodeWebviewProtocol
   }
 
   constructor(private readonly reloadConfig: () => void) {}
-  invoke<T extends keyof ToCoreOrIdeFromWebviewProtocol>(
+  invoke<T extends keyof FromWebviewProtocol>(
     messageType: T,
-    data: ToCoreOrIdeFromWebviewProtocol[T][0],
+    data: FromWebviewProtocol[T][0],
     messageId?: string,
-  ): ToCoreOrIdeFromWebviewProtocol[T][1] {
+  ): FromWebviewProtocol[T][1] {
     throw new Error("Method not implemented.");
   }
 
@@ -208,32 +200,40 @@ export class VsCodeWebviewProtocol
     throw new Error("Method not implemented.");
   }
 
-  public request<T extends keyof FullToWebviewFromIdeOrCoreProtocol>(
+  public request<T extends keyof ToWebviewProtocol>(
     messageType: T,
-    data: FullToWebviewFromIdeOrCoreProtocol[T][0],
-  ): Promise<FullToWebviewFromIdeOrCoreProtocol[T][1]> {
+    data: ToWebviewProtocol[T][0],
+    retry: boolean = true,
+  ): Promise<ToWebviewProtocol[T][1]> {
     const messageId = uuidv4();
     return new Promise(async (resolve) => {
-      let i = 0;
-      while (!this.webview) {
-        if (i >= 10) {
-          resolve(undefined);
-          return;
-        } else {
-          await new Promise((res) => setTimeout(res, i >= 5 ? 1000 : 500));
-          i++;
+      if (retry) {
+        let i = 0;
+        while (!this.webview) {
+          if (i >= 10) {
+            resolve(undefined);
+            return;
+          } else {
+            await new Promise((res) => setTimeout(res, i >= 5 ? 1000 : 500));
+            i++;
+          }
         }
       }
 
       this.send(messageType, data, messageId);
-      const disposable = this.webview.onDidReceiveMessage(
-        (msg: Message<FullToWebviewFromIdeOrCoreProtocol[T][1]>) => {
-          if (msg.messageId === messageId) {
-            resolve(msg.data);
-            disposable?.dispose();
-          }
-        },
-      );
+
+      if (this.webview) {
+        const disposable = this.webview.onDidReceiveMessage(
+          (msg: Message<ToWebviewProtocol[T][1]>) => {
+            if (msg.messageId === messageId) {
+              resolve(msg.data);
+              disposable?.dispose();
+            }
+          },
+        );
+      } else if (!retry) {
+        resolve(undefined);
+      }
     });
   }
 }

@@ -1,28 +1,5 @@
 const Types = `
 declare global {
-  declare global {
-    interface Window {
-      ide?: "vscode";
-      windowId: string;
-      serverUrl: string;
-      vscMachineId: string;
-      vscMediaUrl: string;
-      fullColorTheme?: {
-        rules?: {
-          token?: string;
-          foreground?: string;
-        }[];
-      };
-      colorThemeName?: string;
-      workspacePaths?: string[];
-      postIntellijMessage?: (
-        messageType: string,
-        data: any,
-        messageIde: string,
-      ) => void;
-    }
-  }
-  
   export interface ChunkWithoutID {
     content: string;
     startLine: number;
@@ -509,6 +486,7 @@ declare global {
     | "gemini"
     | "mistral"
     | "bedrock"
+    | "sagemaker"
     | "deepinfra"
     | "flowise"
     | "groq"
@@ -525,6 +503,7 @@ declare global {
     | "gpt-4-32k"
     | "gpt-4-turbo"
     | "gpt-4o"
+    | "gpt-4o-mini"
     | "gpt-4-turbo-preview"
     | "gpt-4-vision-preview"
     // Mistral
@@ -678,7 +657,7 @@ declare global {
   export interface TabAutocompleteOptions {
     disable: boolean;
     useCopyBuffer: boolean;
-    useSuffix: boolean;
+    useFileSuffix: boolean;
     maxPromptTokens: number;
     debounceDelay: number;
     maxSuffixPercentage: number;

@@ -12,21 +12,33 @@ import {
 import { IdeMessengerContext } from "../../context/IdeMessenger";
 import { getFontSize } from "../../util";
 import FileIcon from "../FileIcon";
+import SafeImg from "../SafeImg";
 
 const ContextItemDiv = styled.div`
   cursor: pointer;
-  padding-left: 6px;
-  padding-right: 10px;
-  padding-top: 6px;
-  padding-bottom: 6px;
+  padding: 6px 10px 6px 6px;
   margin-left: 4px;
   display: flex;
   align-items: center;
   border-radius: ${defaultBorderRadius};
-  width: fit-content;
+  font-size: ${getFontSize()};
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 
   &:hover {
     background-color: #fff1;
+  }
+`;
+
+export const ContextItems = styled.span`
+  margin-left: 5px;
+  font-size: ${getFontSize() - 1}px;
+  color: ${lightGray};
+
+  &:hover {
+    text-decoration: underline;
   }
 `;
 
@@ -39,9 +51,15 @@ const ContextItemsPeek = (props: ContextItemsPeekProps) => {
 
   const [open, setOpen] = React.useState(false);
 
-  if (!props.contextItems || props.contextItems.length === 0) {
+  const ctxItems = props.contextItems;
+
+  if (!ctxItems || ctxItems.length === 0) {
     return null;
   }
+
+  const contextItemsText = `${ctxItems.length} context ${
+    ctxItems.length > 1 ? "items" : "item"
+  }`;
 
   function openContextItem(contextItem: ContextItemWithId) {
     if (contextItem.description.startsWith("http")) {
@@ -97,7 +115,7 @@ const ContextItemsPeek = (props: ContextItemsPeekProps) => {
             style={{ color: lightGray }}
           ></ChevronDownIcon>
         )}
-        Context Used
+        <ContextItems>{contextItemsText}</ContextItems>
       </div>
       {open && (
         <div
@@ -105,7 +123,7 @@ const ContextItemsPeek = (props: ContextItemsPeekProps) => {
             paddingTop: "2px",
           }}
         >
-          {props.contextItems?.map((contextItem, idx) => {
+          {ctxItems?.map((contextItem, idx) => {
             if (contextItem.description.startsWith("http")) {
               return (
                 <a
@@ -119,17 +137,27 @@ const ContextItemsPeek = (props: ContextItemsPeekProps) => {
                       openContextItem(contextItem);
                     }}
                   >
-                    <FileIcon
-                      filename={
-                        contextItem.description
-                          .split(" ")
-                          .shift()
-                          .split("#")
-                          .shift() || ""
-                      }
-                      height="1.6em"
-                      width="1.6em"
-                    ></FileIcon>
+                    {!!contextItem.icon ? (
+                      <SafeImg
+                        className="flex-shrink-0 pr-2"
+                        src={contextItem.icon}
+                        height="18em"
+                        width="18em"
+                        fallback={null}
+                      />
+                    ) : (
+                      <FileIcon
+                        filename={
+                          contextItem.description
+                            .split(" ")
+                            .shift()
+                            ?.split("#")
+                            .shift() || ""
+                        }
+                        height="1.6em"
+                        width="1.6em"
+                      ></FileIcon>
+                    )}
                     {contextItem.name}
                   </ContextItemDiv>
                 </a>
@@ -143,11 +171,21 @@ const ContextItemsPeek = (props: ContextItemsPeekProps) => {
                   openContextItem(contextItem);
                 }}
               >
-                <FileIcon
-                  filename={contextItem.description.split(" ").shift()}
-                  height="1.6em"
-                  width="1.6em"
-                ></FileIcon>
+                {!!contextItem.icon ? (
+                  <SafeImg
+                    className="flex-shrink-0 pr-2"
+                    src={contextItem.icon}
+                    height="18em"
+                    width="18em"
+                    fallback={null}
+                  />
+                ) : (
+                  <FileIcon
+                    filename={contextItem.description.split(" ").shift()!}
+                    height="1.6em"
+                    width="1.6em"
+                  ></FileIcon>
+                )}
                 {contextItem.name}
               </ContextItemDiv>
             );

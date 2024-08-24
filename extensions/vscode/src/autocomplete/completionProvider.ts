@@ -4,7 +4,7 @@ import {
   CompletionProvider,
   type AutocompleteInput,
 } from "core/autocomplete/completionProvider";
-import { IConfigHandler } from "core/config/IConfigHandler";
+import { ConfigHandler } from "core/config/ConfigHandler";
 import { v4 as uuidv4 } from "uuid";
 import * as vscode from "vscode";
 import type { TabAutocompleteModel } from "../util/loadAutocompleteModel";
@@ -35,7 +35,7 @@ export class ContinueCompletionProvider
       if (val === "Documentation") {
         vscode.env.openExternal(
           vscode.Uri.parse(
-            "https://docs.continue.dev/walkthroughs/tab-autocomplete",
+            "https://docs.continue.dev/features/tab-autocomplete",
           ),
         );
       } else if (val === "Download Ollama") {
@@ -48,7 +48,7 @@ export class ContinueCompletionProvider
   private recentlyEditedTracker = new RecentlyEditedTracker();
 
   constructor(
-    private readonly configHandler: IConfigHandler,
+    private readonly configHandler: ConfigHandler,
     private readonly ide: IDE,
     private readonly tabAutocompleteModel: TabAutocompleteModel,
   ) {

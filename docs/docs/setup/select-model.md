@@ -38,7 +38,7 @@ _You can also use other open-source chat models by adding them to your `config.j
 #### GPT-4o from OpenAI
 
 - Unlimited budget: `gpt-4o`
-- Limited budget: `gpt-3.5-turbo-0125`
+- Limited budget: `gpt-4o-mini`
 
 #### Gemini Pro from Google
 
@@ -49,7 +49,7 @@ _You can also use other commercial chat models by adding them to your `config.js
 
 ## Autocomplete
 
-You likely want to use a model that is 1-15B parameters for autocomplete.
+You likely want to use a model that is 1-15B parameters for autocomplete. You can read more about it [here](../features/tab-autocomplete.md#tab-autocomplete-beta)
 
 ### Commercial LLMs
 
@@ -75,7 +75,7 @@ _You can also use other autocomplete models by adding them to your `config.json`
 
 ## Embeddings
 
-We recommend the following embeddings models, which are used for codebase retrieval as described [here](../walkthroughs/codebase-embeddings.md#embeddings-providers)
+We recommend the following embeddings models, which are used for codebase retrieval as described [here](../features/codebase-embeddings.md#embeddings-providers)
 
 ### Open-source models
 
@@ -87,4 +87,4 @@ We recommend the following embeddings models, which are used for codebase retrie
 
 _You can also use other embeddings models by adding them to your `config.json`._
 
-**In addition to selecting models, you will need to figure out [what providers to use](./select-provider.md).**
+**In addition to selecting models, you will need to figure out [what model providers to use](./model-providers.md).**

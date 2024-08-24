@@ -1,3 +1,4 @@
+import { ControlPlaneSessionInfo } from "../control-plane/client.js";
 import type {
   ContinueRcJson,
   DiffLine,
@@ -10,7 +11,7 @@ import type {
   Range,
   RangeInFile,
   Thread,
-} from "..";
+} from "../index.js";
 
 export type ToIdeFromWebviewOrCoreProtocol = {
   // Methods from IDE type
@@ -77,5 +78,18 @@ export type ToIdeFromWebviewOrCoreProtocol = {
   gotoDefinition: [{ location: Location }, RangeInFile[]];
 
   getGitHubAuthToken: [undefined, string | undefined];
+  getControlPlaneSessionInfo: [
+    { silent: boolean },
+    ControlPlaneSessionInfo | undefined,
+  ];
+  logoutOfControlPlane: [undefined, void];
   pathSep: [undefined, string];
+};
+
+export type ToWebviewOrCoreFromIdeProtocol = {
+  didChangeActiveTextEditor: [{ filepath: string }, void];
+  didChangeControlPlaneSessionInfo: [
+    { sessionInfo: ControlPlaneSessionInfo | undefined },
+    void,
+  ];
 };
