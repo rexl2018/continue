@@ -1,5 +1,5 @@
-import { ContextProviderName } from "../../index.js";
-import { BaseContextProvider } from "../index.js";
+import { ContextProviderName } from "../../";
+import { BaseContextProvider } from "../";
 import CodeContextProvider from "./CodeContextProvider.js";
 import ContinueProxyContextProvider from "./ContinueProxyContextProvider.js";
 import CurrentFileContextProvider from "./CurrentFileContextProvider.js";
@@ -23,6 +23,7 @@ import ProblemsContextProvider from "./ProblemsContextProvider.js";
 import SearchContextProvider from "./SearchContextProvider.js";
 import TerminalContextProvider from "./TerminalContextProvider.js";
 import URLContextProvider from "./URLContextProvider.js";
+import RepoMapContextProvider from "./RepoMapContextProvider";
 
 /**
  * Note: We are currently omitting the following providers due to bugs:
@@ -55,6 +56,7 @@ const Providers: (typeof BaseContextProvider)[] = [
   CurrentFileContextProvider,
   URLContextProvider,
   ContinueProxyContextProvider,
+  RepoMapContextProvider,
 ];
 
 export function contextProviderClassFromName(

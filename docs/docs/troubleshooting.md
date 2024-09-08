@@ -20,6 +20,10 @@ To solve many problems, the first step is reading the logs to find the relevant 
 
 #### Console logs
 
+:::info
+In order to view debug logs, which contain extra information, click the dropdown at the top that says "Default levels" and select "Verbose".
+:::
+
 1. `cmd+shift+p` (MacOS) / `ctrl+shift+p` (Windows)
 2. Search for and then select "Developer: Toggle Developer Tools"
 3. This will open the [Chrome DevTools window](https://developer.chrome.com/docs/devtools/)
@@ -53,7 +57,7 @@ On JetBrains, the "pre-release" happens through their Early Access Program (EAP)
 1. Open JetBrains settings (cmd/ctrl+,) and go to "Plugins"
 2. Click the gear icon at the top
 3. Select "Manage Plugin Repositories..."
-4. Add "[https://plugins.jetbrains.com/plugins/eap/list>](https://plugins.jetbrains.com/plugins/eap/list>)" to the list
+4. Add "[https://plugins.jetbrains.com/plugins/eap/list>](https://plugins.jetbrains.com/plugins/eap/list)" to the list
 5. You'll now always be able to download the latest EAP version from the marketplace
 
 ## Download an Older Version
