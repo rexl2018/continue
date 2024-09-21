@@ -602,6 +602,7 @@ declare global {
     | "msty"
     | "watsonx"
     | "openrouter"
+    | "sambanova"
     | "nvidia";
 
   export type ModelName =
