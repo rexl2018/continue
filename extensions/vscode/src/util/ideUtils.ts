@@ -23,6 +23,8 @@ import _ from "lodash";
 const util = require("node:util");
 const asyncExec = util.promisify(require("node:child_process").exec);
 
+const baseBranchName = "master";
+
 export class VsCodeIdeUtils {
   visibleMessages: Set<string> = new Set();
 
@@ -657,9 +659,9 @@ export class VsCodeIdeUtils {
       }
 
       repos.push(repo.state.HEAD?.name);
-      const base = await repo.getBranchBase(repo.state.HEAD?.name || "");
+      //const base = await repo.getBranchBase(repo.state.HEAD?.name || "");
 
-      const mrChanges = await repo.diffBetween(base?.name || "", repo.state.HEAD?.name || "");
+      const mrChanges = await repo.diffBetween(baseBranchName, repo.state.HEAD?.name || "");
       
       let i = 0;
       for(const ch of mrChanges) {
@@ -670,7 +672,7 @@ export class VsCodeIdeUtils {
         }
         i++;
         console.log(`change ${i}: ${ch.uri} => ${curFile}`);
-        const curDiff = await repo.diffBetween(base?.name || "", repo.state.HEAD?.name || "", curFile);
+        const curDiff = await repo.diffBetween(baseBranchName, repo.state.HEAD?.name || "", curFile);
         //console.log(`curDiff: ${curDiff}`);
         diffs.push(`${curDiff}\n`);
       }
@@ -703,9 +705,9 @@ export class VsCodeIdeUtils {
       }
 
       repos.push(repo.state.HEAD?.name);
-      const base = await repo.getBranchBase(repo.state.HEAD?.name || "");
+      //const base = await repo.getBranchBase(repo.state.HEAD?.name || "");
 
-      const mrChanges = await repo.diffBetween(base?.name || "", repo.state.HEAD?.name || "");
+      const mrChanges = await repo.diffBetween(baseBranchName, repo.state.HEAD?.name || "");
       
       let i = 0;
       for(const ch of mrChanges) {
@@ -719,7 +721,7 @@ export class VsCodeIdeUtils {
         }
         i++;
         console.log(`change ${i}: ${ch.uri} => ${curFile}`);
-        const curDiff = await repo.diffBetween(base?.name || "", repo.state.HEAD?.name || "", curFile);
+        const curDiff = await repo.diffBetween(baseBranchName, repo.state.HEAD?.name || "", curFile);
         //console.log(`curDiff: ${curDiff}`);
         diffs.push(`${curDiff}\n`);
       }
