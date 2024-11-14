@@ -8,12 +8,67 @@ import { stripImages } from "../images.js";
 import { BaseLLM } from "../index.js";
 import { streamResponse } from "../stream.js";
 
+interface OllamaChatMessage extends ChatMessage {
+  images?: string[];
+}
+
+// See https://github.com/ollama/ollama/blob/main/docs/modelfile.md for details on each parameter
+interface ModelFileParams {
+  mirostat?: number;
+  mirostat_eta?: number;
+  mirostat_tau?: number;
+  num_ctx?: number;
+  repeat_last_n?: number;
+  repeat_penalty?: number;
+  temperature?: number;
+  seed?: number;
+  stop?: string | string[];
+  tfs_z?: number;
+  num_predict?: number;
+  top_k?: number;
+  top_p?: number;
+  min_p?: number;
+  // deprecated?
+  num_thread?: number;
+  num_gqa?: number;
+  num_gpu?: number;
+}
+
+// See https://github.com/ollama/ollama/blob/main/docs/api.md
+interface BaseOptions {
+  model: string;              // the model name
+  options?: ModelFileParams; // additional model parameters listed in the documentation for the Modelfile such as temperature
+  format?: "json";            // the format to return a response in. Currently, the only accepted value is json
+  stream?: boolean;           // if false the response will be returned as a single response object, rather than a stream of objects
+  keep_alive?: number;       // controls how long the model will stay loaded into memory following the request (default: 5m)
+}
+
+interface GenerateOptions extends BaseOptions {
+  prompt: string;             // the prompt to generate a response for
+  suffix?: string;            // the text after the model response
+  images?: string[];          // a list of base64-encoded images (for multimodal models such as llava)
+  system?: string;            // system message to (overrides what is defined in the Modelfile)
+  template?: string;          // the prompt template to use (overrides what is defined in the Modelfile)
+  context?: string;           // the context parameter returned from a previous request to /generate, this can be used to keep a short conversational memory
+  raw?: boolean;              // if true no formatting will be applied to the prompt. You may choose to use the raw parameter if you are specifying a full templated prompt in your request to the API
+}
+
+interface ChatOptions extends BaseOptions {
+  messages: OllamaChatMessage[];      // the messages of the chat, this can be used to keep a chat memory
+  // Not supported yet - tools: tools for the model to use if supported. Requires stream to be set to false
+  // And correspondingly, tool calls in OllamaChatMessage
+}
+
+
+
 class Ollama extends BaseLLM {
   static providerName: ModelProvider = "ollama";
   static defaultOptions: Partial<LLMOptions> = {
     apiBase: "http://localhost:11434/",
     model: "codellama-7b",
   };
+
+  private fimSupported: boolean = false;
 
   constructor(options: LLMOptions) {
     super(options);
@@ -31,7 +86,7 @@ class Ollama extends BaseLLM {
       body: JSON.stringify({ name: this._getModel() }),
     })
       .then(async (response) => {
-        if (response.status !== 200) {
+        if (response?.status !== 200) {
           // console.warn(
           //   "Error calling Ollama /api/show endpoint: ",
           //   await response.text(),
@@ -61,7 +116,7 @@ class Ollama extends BaseLLM {
                   this.completionOptions.stop.push(JSON.parse(value));
                 } catch (e) {
                   console.warn(
-                    "Error parsing stop parameter value \"{value}: ${e}",
+                    `Error parsing stop parameter value "{value}: ${e}`,
                   );
                 }
                 break;
@@ -70,6 +125,13 @@ class Ollama extends BaseLLM {
             }
           }
         }
+
+        /**
+         * There is no API to get the model's FIM capabilities, so we have to
+         * make an educated guess. If a ".Suffix" variable appears in the template
+         * it's a good indication the model supports FIM.
+         */
+        this.fimSupported = !!body?.template?.includes(".Suffix");
       })
       .catch((e) => {
         // console.warn("Error calling the Ollama /api/show endpoint: ", e);
@@ -92,6 +154,10 @@ class Ollama extends BaseLLM {
         "llama3.1-8b": "llama3.1:8b",
         "llama3.1-70b": "llama3.1:70b",
         "llama3.1-405b": "llama3.1:405b",
+        "llama3.2-1b": "llama3.2:1b",
+        "llama3.2-3b": "llama3.2:3b",
+        "llama3.2-11b": "llama3.2:11b",
+        "llama3.2-90b": "llama3.2:90b",
         "phi-2": "phi:2.7b",
         "phind-codellama-34b": "phind-codellama:34b-v2",
         "wizardcoder-7b": "wizardcoder:7b-python",
@@ -115,47 +181,72 @@ class Ollama extends BaseLLM {
     );
   }
 
-  private _convertMessage(message: ChatMessage) {
+  private _getModelFileParams(options: CompletionOptions): ModelFileParams {
+    return {
+      temperature: options.temperature,
+      top_p: options.topP,
+      top_k: options.topK,
+      num_predict: options.maxTokens,
+      stop: options.stop,
+      num_ctx: this.contextLength,
+      mirostat: options.mirostat,
+      num_thread: options.numThreads,
+      min_p: options.minP,
+    };
+  }
+
+  private _convertMessage(
+    message: ChatMessage
+  ) {
     if (typeof message.content === "string") {
       return message;
     }
+    const images: string[] = [];
+    message.content.forEach((part) => {
+      if (part.type === "imageUrl" && part.imageUrl) {
+        const image = part.imageUrl?.url.split(",").at(-1);
+        if (image) {
+          images.push(image);
+        }
+      }
+    });
 
     return {
       role: message.role,
       content: stripImages(message.content),
-      images: message.content
-        .filter((part) => part.type === "imageUrl")
-        .map((part) => part.imageUrl?.url.split(",").at(-1)),
+      images
     };
   }
 
-  private _convertArgs(
+  private _getChatOptions(
     options: CompletionOptions,
-    prompt: string | ChatMessage[],
-  ) {
-    const finalOptions: any = {
+    messages: ChatMessage[]
+  ): ChatOptions {
+    return {
       model: this._getModel(),
-      raw: true,
+      messages: messages.map(this._convertMessage),
+      options: this._getModelFileParams(options),
       keep_alive: options.keepAlive ?? 60 * 30, // 30 minutes
-      options: {
-        temperature: options.temperature,
-        top_p: options.topP,
-        top_k: options.topK,
-        num_predict: options.maxTokens,
-        stop: options.stop,
-        num_ctx: this.contextLength,
-        mirostat: options.mirostat,
-        num_thread: options.numThreads,
-      },
+      stream: options.stream,
+      // format: options.format, // Not currently in base completion options
     };
+  }
 
-    if (typeof prompt === "string") {
-      finalOptions.prompt = prompt;
-    } else {
-      finalOptions.messages = prompt.map(this._convertMessage);
-    }
-
-    return finalOptions;
+  private _getGenerateOptions(
+    options: CompletionOptions,
+    prompt: string,
+    suffix?: string
+  ): GenerateOptions {
+    return {
+      model: this._getModel(),
+      prompt,
+      suffix,
+      raw: options.raw,
+      options: this._getModelFileParams(options),
+      keep_alive: options.keepAlive ?? 60 * 30, // 30 minutes
+      stream: options.stream,
+      // Not supported yet: context, images, system, template, format
+    };
   }
 
   private getEndpoint(endpoint: string): URL {
@@ -177,7 +268,7 @@ class Ollama extends BaseLLM {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
       },
-      body: JSON.stringify(this._convertArgs(options, prompt)),
+      body: JSON.stringify(this._getGenerateOptions(options, prompt)),
     });
 
     let buffer = "";
@@ -216,7 +307,7 @@ class Ollama extends BaseLLM {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
       },
-      body: JSON.stringify(this._convertArgs(options, messages)),
+      body: JSON.stringify(this._getChatOptions(options, messages)),
     });
 
     let buffer = "";
@@ -238,6 +329,50 @@ class Ollama extends BaseLLM {
                 content: j.message.content,
               };
             } else if (j.error) {
+              throw new Error(j.error);
+            }
+          } catch (e) {
+            throw new Error(`Error parsing Ollama response: ${e} ${chunk}`);
+          }
+        }
+      }
+    }
+  }
+
+  supportsFim(): boolean {
+    return this.fimSupported;
+  }
+
+  protected async *_streamFim(
+    prefix: string,
+    suffix: string,
+    options: CompletionOptions,
+  ): AsyncGenerator<string> {
+    const response = await this.fetch(this.getEndpoint("api/generate"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify(this._getGenerateOptions(options, prefix, suffix)),
+    });
+
+    let buffer = "";
+    for await (const value of streamResponse(response)) {
+      // Append the received chunk to the buffer
+      buffer += value;
+      // Split the buffer into individual JSON chunks
+      const chunks = buffer.split("\n");
+      buffer = chunks.pop() ?? "";
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        if (chunk.trim() !== "") {
+          try {
+            const j = JSON.parse(chunk);
+            if ("response" in j) {
+              yield j.response;
+            } else if ("error" in j) {
               throw new Error(j.error);
             }
           } catch (e) {

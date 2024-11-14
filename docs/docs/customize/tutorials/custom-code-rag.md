@@ -1,6 +1,6 @@
 # Custom code RAG
 
-While Continue comes with [@codebase](../deep-dives/codebase.md) out of the box, you might wish to set up your own vector database and build a custom retrieval-augmented generation (RAG) system. This can allow you to access code that is not available locally, to index code a single time across all users, or to include custom logic. In this guide, we'll walk you through the steps it takes to build this.
+While Continue comes with [@Codebase](../deep-dives/codebase.md) out of the box, you might wish to set up your own vector database and build a custom retrieval-augmented generation (RAG) system. This can allow you to access code that is not available locally, to index code a single time across all users, or to include custom logic. In this guide, we'll walk you through the steps it takes to build this.
 
 ## Step 1: Choose an embeddings model
 
@@ -146,4 +146,4 @@ If you wish to return 10 total results for each query for example, then you woul
 2. Send all of these 50 results to the reranker API along with the query in order to get relevancy scores for each
 3. Sort the results by relevancy score and return the top 10
 
-We recommend using the `rerank-1` model from Voyage AI, which has examples of usage [here](https://docs.voyageai.com/docs/reranker).
+We recommend using the `rerank-2` model from Voyage AI, which has examples of usage [here](https://docs.voyageai.com/docs/reranker).

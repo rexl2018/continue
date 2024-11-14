@@ -1,9 +1,5 @@
 package com.github.continuedev.continueintellijextension.utils
 
-import org.jetbrains.plugins.terminal.TerminalView
-import java.awt.Toolkit
-import java.awt.event.KeyEvent
-
 enum class Os {
     MAC, WINDOWS, LINUX
 }
@@ -22,8 +18,8 @@ fun getOs(): Os {
 fun getMetaKeyLabel(): String {
     return when (getOs()) {
         Os.MAC -> "⌘"
-        Os.WINDOWS -> "Ctrl"
-        Os.LINUX -> "Ctrl"
+        Os.WINDOWS -> "^"
+        Os.LINUX -> "^"
     }
 }
 
@@ -35,5 +31,9 @@ fun getAltKeyLabel(): String {
     }
 }
 
-fun TerminalView.isNotAvailable(): Boolean =
-    toolWindow == null || !toolWindow.isVisible || !toolWindow.isAvailable || toolWindow.isDisposed
+fun getShiftKeyLabel(): String {
+    return when (getOs()) {
+        Os.MAC -> "⇧"
+        Os.WINDOWS, Os.LINUX -> "↑"
+    }
+}

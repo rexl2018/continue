@@ -55,6 +55,7 @@ export const modelDescriptionSchema = z.object({
     "cloudflare",
     "azure",
     "continue-proxy",
+    "nebius",
   ]),
   model: z.string(),
   apiKey: z.string().optional(),
@@ -106,11 +107,12 @@ export const embeddingsProviderSchema = z.object({
     "free-trial",
     "gemini",
     "continue-proxy",
+    "nebius",
   ]),
   apiBase: z.string().optional(),
   apiKey: z.string().optional(),
   model: z.string().optional(),
-  engine: z.string().optional(),
+  deployment: z.string().optional(),
   apiType: z.string().optional(),
   apiVersion: z.string().optional(),
   requestOptions: requestOptionsSchema.optional(),
@@ -128,11 +130,12 @@ export type UiOptions = z.infer<typeof uiOptionsSchema>;
 export const tabAutocompleteOptionsSchema = z.object({
   disable: z.boolean(),
   useCopyBuffer: z.boolean(),
-  useSuffix: z.boolean(),
+  useFileSuffix: z.boolean(),
   maxPromptTokens: z.number(),
   debounceDelay: z.number(),
   maxSuffixPercentage: z.number(),
   prefixPercentage: z.number(),
+  transform: z.boolean().optional(),
   template: z.string().optional(),
   multilineCompletions: z.enum(["always", "never", "auto"]),
   slidingWindowPrefixPercentage: z.number(),
@@ -206,6 +209,11 @@ export const siteIndexingConfigSchema = z.object({
   faviconUrl: z.string().optional(),
 });
 
+export const controlPlaneConfigSchema = z.object({
+  useContinueForTeamsProxy: z.boolean().optional(),
+  proxyUrl: z.string().optional(),
+});
+
 export const configJsonSchema = z.object({
   models: z.array(modelDescriptionSchema),
   tabAutocompleteModel: modelDescriptionSchema.optional(),
@@ -224,5 +232,6 @@ export const configJsonSchema = z.object({
   tabAutocompleteOptions: tabAutocompleteOptionsSchema.optional(),
   ui: uiOptionsSchema.optional(),
   docs: z.array(siteIndexingConfigSchema).optional(),
+  controlPlane: controlPlaneConfigSchema.optional(),
 });
 export type ConfigJson = z.infer<typeof configJsonSchema>;

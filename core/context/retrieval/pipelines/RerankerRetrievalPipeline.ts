@@ -6,12 +6,15 @@ import BaseRetrievalPipeline from "./BaseRetrievalPipeline.js";
 
 export default class RerankerRetrievalPipeline extends BaseRetrievalPipeline {
   private async _retrieveInitial(): Promise<Chunk[]> {
-    const { input, nRetrieve, filterDirectory } = this.options;
+    const { input, nRetrieve, filterDirectory, includeEmbeddings } =
+      this.options;
 
     let retrievalResults: Chunk[] = [];
 
     const ftsChunks = await this.retrieveFts(input, nRetrieve);
-    const embeddingsChunks = await this.retrieveEmbeddings(input, nRetrieve);
+    const embeddingsChunks = includeEmbeddings
+      ? await this.retrieveEmbeddings(input, nRetrieve)
+      : [];
     const recentlyEditedFilesChunks =
       await this.retrieveAndChunkRecentlyEditedFiles(nRetrieve);
 
@@ -48,6 +51,9 @@ export default class RerankerRetrievalPipeline extends BaseRetrievalPipeline {
       throw new Error("No reranker provided");
     }
 
+    // remove empty chunks -- some APIs fail on that
+    chunks = chunks.filter((chunk) => chunk.content);
+
     let scores: number[] = await this.options.config.reranker.rerank(
       input,
       chunks,
@@ -62,8 +68,11 @@ export default class RerankerRetrievalPipeline extends BaseRetrievalPipeline {
     //   (score) => score >= RETRIEVAL_PARAMS.rerankThreshold,
     // );
 
+    const chunkIndexMap = new Map<Chunk, number>();
+    chunks.forEach((chunk, idx) => chunkIndexMap.set(chunk, idx));
+
     results.sort(
-      (a, b) => scores[results.indexOf(a)] - scores[results.indexOf(b)],
+      (a, b) => scores[chunkIndexMap.get(a)!] - scores[chunkIndexMap.get(b)!],
     );
     results = results.slice(-this.options.nFinal);
     return results;

@@ -47,8 +47,9 @@ declare global {
     llmRequestHook?: (model: string, prompt: string) => any;
     apiKey?: string;
     apiBase?: string;
+    cacheBehavior?: CacheBehavior;
 
-    engine?: string;
+    deployment?: string;
     apiVersion?: string;
     apiType?: string;
     region?: string;
@@ -313,6 +314,7 @@ declare global {
     apiKey?: string;
     aiGatewaySlug?: string;
     apiBase?: string;
+    cacheBehavior?: CacheBehavior;
 
     useLegacyCompletionsEndpoint?: boolean;
 
@@ -320,7 +322,7 @@ declare global {
     accountId?: string;
 
     // Azure options
-    engine?: string;
+    deployment?: string;
     apiVersion?: string;
     apiType?: string;
 
@@ -336,13 +338,7 @@ declare global {
     capabilities?: ModelCapability;
 
     // IBM watsonx options
-    watsonxUrl?: string;
-    watsonxCreds?: string;
-    watsonxProjectId?: string;
-    watsonxStopToken?: string;
-    watsonxApiVersion?: string;
-
-    cacheSystemMessage?: boolean;
+    deploymentId?: string;
   }
   type RequireAtLeastOne<T, Keys extends keyof T = keyof T> = Pick<
     T,
@@ -434,7 +430,7 @@ declare global {
   export interface IDE {
     getIdeInfo(): Promise<IdeInfo>;
     getIdeSettings(): Promise<IdeSettings>;
-    getDiff(): Promise<string>;
+    getDiff(includeUnstaged: boolean): Promise<string>;
     isTelemetryEnabled(): Promise<boolean>;
     getUniqueId(): Promise<string>;
     getTerminalContents(): Promise<string>;
@@ -533,7 +529,7 @@ declare global {
     | "difff"
     | "github"
     | "terminal"
-    | "locals"
+    | "debugger"
     | "open"
     | "google"
     | "search"
@@ -549,7 +545,8 @@ declare global {
     | "docs"
     | "gitlab-mr"
     | "os"
-    | "currentFile";
+    | "currentFile"
+    | "greptile";
 
   type TemplateType =
     | "llama2"
@@ -603,7 +600,8 @@ declare global {
     | "watsonx"
     | "openrouter"
     | "sambanova"
-    | "nvidia";
+    | "nvidia"
+    | "nebius";
 
   export type ModelName =
     | "AUTODETECT"
@@ -649,6 +647,8 @@ declare global {
     | "deepseek-7b"
     | "deepseek-33b"
     | "neural-chat-7b"
+    | "gemma-7b-it"
+    | "gemma2-9b-it"
     // Anthropic
     | "claude-3-5-sonnet-20240620"
     | "claude-3-opus-20240229"
@@ -685,6 +685,11 @@ declare global {
     extraBodyProperties?: { [key: string]: any };
     noProxy?: string[];
     clientCertificate?: ClientCertificateOptions;
+  }
+
+  export interface CacheBehavior {
+    cacheSystemMessage?: boolean;
+    cacheConversation?: boolean;
   }
 
   export interface ClientCertificateOptions {
@@ -749,6 +754,7 @@ declare global {
     requestOptions?: RequestOptions;
     promptTemplates?: { [key: string]: string };
     capabilities?: ModelCapability;
+    cacheBehavior?: CacheBehavior;
   }
 
   export type EmbeddingsProviderName =
@@ -761,17 +767,20 @@ declare global {
     | "gemini"
     | "continue-proxy"
     | "deepinfra"
-    | "voyage";
+    | "voyage"
+    | "watsonx"
+    | "nebius";
 
   export interface EmbedOptions {
     apiBase?: string;
     apiKey?: string;
     model?: string;
-    engine?: string;
+    deployment?: string;
     apiType?: string;
     apiVersion?: string;
     requestOptions?: RequestOptions;
     maxChunkSize?: number;
+    projectId?: string;
   }
 
   export interface EmbeddingsProviderDescription extends EmbedOptions {

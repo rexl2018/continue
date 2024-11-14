@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
-    "start": "nodemon --watch sidebars.js --watch docusaurus.config.js --exec 'docusaurus start'",
+    "start": "nodemon --watch sidebars.js --watch docusaurus.config.js --exec \"docusaurus start\"",
     "build": "docusaurus build",
     "build:netlify": "docusaurus build --out-dir build/docs",
     "swizzle": "docusaurus swizzle",
@@ -21,7 +21,6 @@
     "@docusaurus/preset-classic": "^3.5.2",
     "@mdx-js/react": "^3.0.0",
     "clsx": "^2.1.0",
-    "docusaurus-json-schema-plugin": "^1.11.0",
     "prism-react-renderer": "^2.3.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"

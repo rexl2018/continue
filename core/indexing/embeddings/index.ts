@@ -1,5 +1,6 @@
 import { EmbeddingsProviderName } from "../../index.js";
 import BaseEmbeddingsProvider from "./BaseEmbeddingsProvider.js";
+import SageMakerEmbeddingsProvider from "./SageMakerEmbeddingsProvider.js";
 import BedrockEmbeddingsProvider from "./BedrockEmbeddingsProvider.js";
 import CohereEmbeddingsProvider from "./CohereEmbeddingsProvider.js";
 import ContinueProxyEmbeddingsProvider from "./ContinueProxyEmbeddingsProvider.js";
@@ -13,6 +14,9 @@ import OpenAIEmbeddingsProvider from "./OpenAIEmbeddingsProvider.js";
 import TransformersJsEmbeddingsProvider from "./TransformersJsEmbeddingsProvider.js";
 import NvidiaEmbeddingsProvider from "./NvidiaEmbeddingsProvider.js";
 import VoyageEmbeddingsProvider from "./VoyageEmbeddingsProvider.js";
+import VertexEmbeddingsProvider from "./VertexEmbeddingsProvider.js";
+import WatsonxEmbeddingsProvider from "./WatsonxEmbeddingsProvider.js";
+import NebiusEmbeddingsProvider from "./NebiusEmbeddingsProvider.js";
 
 type EmbeddingsProviderConstructor = new (
   ...args: any[]
@@ -22,6 +26,7 @@ export const allEmbeddingsProviders: Record<
   EmbeddingsProviderName,
   EmbeddingsProviderConstructor
 > = {
+  sagemaker: SageMakerEmbeddingsProvider,
   bedrock: BedrockEmbeddingsProvider,
   ollama: OllamaEmbeddingsProvider,
   "transformers.js": TransformersJsEmbeddingsProvider,
@@ -35,4 +40,7 @@ export const allEmbeddingsProviders: Record<
   nvidia: NvidiaEmbeddingsProvider,
   voyage: VoyageEmbeddingsProvider,
   mistral: MistralEmbeddingsProvider,
+  nebius: NebiusEmbeddingsProvider,
+  vertexai: VertexEmbeddingsProvider,
+  watsonx: WatsonxEmbeddingsProvider
 };

@@ -14,12 +14,11 @@
     }
   },
   "search.exclude": {
-    "**/binary": true,
-    "binary/": false,
     "**/core/vendor/**": true,
-    "**/gui/dist": true
+    "**/gui/dist": true,
+    "**/extensions/vscode/gui/**": true,
+    "**/extensions/vscode/out/**": true,
+    "**/extensions/intellij/build/**": true
   },
-  "eslint.workingDirectories": [
-    "./core"
-  ]
+  "eslint.workingDirectories": ["./core"]
 }

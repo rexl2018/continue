@@ -7,7 +7,11 @@ sidebar_position: 3
 
 An "embeddings model" is trained to convert a piece of text into a vector, which can later be rapidly compared to other vectors to determine similarity between the pieces of text. Embeddings models are typically much smaller than LLMs, and will be extremely fast and cheap in comparison.
 
-In Continue, embeddings are generated during indexing and then used by [@codebase](../deep-dives/codebase.md) to perform similarity search over your codebase.
+In Continue, embeddings are generated during indexing and then used by [@Codebase](../deep-dives/codebase.md) to perform similarity search over your codebase.
+
+:::info[Default model (VS Code only)]
+`transformers.js` is used as a default embeddings model in VS Code. In JetBrains, there currently is no default.
+:::
 
 ## Recommended embedding models
 
@@ -35,7 +39,7 @@ See [here](../model-providers/top-level/ollama.md#embeddings-model) for instruct
 
 ### Transformers.js (currently VS Code only)
 
-[Transformers.js](https://huggingface.co/docs/transformers.js/index) is a JavaScript port of the popular [Transformers](https://huggingface.co/transformers/) library. It allows embeddings to be calculated entirely locally. The model used is `all-MiniLM-L6-v2`, which is shipped alongside the Continue extension and used as the default when you have not explicitly configured an embeddings provider.
+[Transformers.js](https://huggingface.co/docs/transformers.js/index) is a JavaScript port of the popular [Transformers](https://huggingface.co/transformers/) library. It allows embeddings to be calculated entirely locally. The model used is `all-MiniLM-L6-v2`, which is shipped alongside the Continue extension.
 
 ```json title="config.json"
 {
@@ -69,3 +73,7 @@ See [here](../model-providers/more/cohere.md#embeddings-model) for instructions 
 ### Gemini
 
 See [here](../model-providers/top-level/gemini.md#embeddings-model) for instructions on how to use Gemini for embeddings.
+
+### Vertex
+
+See [here](../model-providers/top-level/vertexai.md#embeddings-model) for instructions on how to use Vertex for embeddings.

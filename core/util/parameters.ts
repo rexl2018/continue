@@ -20,6 +20,8 @@ export const DEFAULT_AUTOCOMPLETE_OPTS: TabAutocompleteOptions = {
   recentLinePrefixMatchMinLength: 7,
   disableInFiles: undefined,
   useImports: true,
+  useRootPathContext: true,
+  transform: true,
 };
 
 export const COUNT_COMPLETION_REJECTED_AFTER = 10_000;

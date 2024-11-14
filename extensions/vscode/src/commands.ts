@@ -1,18 +1,20 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
-import * as vscode from "vscode";
 import { ContextMenuConfig, IDE } from "core";
 import { CompletionProvider } from "core/autocomplete/completionProvider";
 import { ConfigHandler } from "core/config/ConfigHandler";
+import { getModelByRole } from "core/config/util";
 import { ContinueServerClient } from "core/continueServer/stubs/client";
+import { EXTENSION_NAME } from "core/control-plane/env";
 import { Core } from "core/core";
 import { walkDirAsync } from "core/indexing/walkDir";
 import { GlobalContext } from "core/util/GlobalContext";
 import { getConfigJsonPath, getDevDataFilePath } from "core/util/paths";
 import { Telemetry } from "core/util/posthog";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import readLastLines from "read-last-lines";
+import * as vscode from "vscode";
 import {
   StatusBarStatus,
   getAutocompleteStatusBarDescription,
@@ -24,9 +26,10 @@ import {
 } from "./autocomplete/statusBar";
 import { ContinueGUIWebviewViewProvider } from "./ContinueGUIWebviewViewProvider";
 import { DiffManager } from "./diff/horizontal";
-import { VerticalPerLineDiffManager } from "./diff/verticalPerLine/manager";
+import { VerticalDiffManager } from "./diff/vertical/manager";
 import { QuickEdit, QuickEditShowParams } from "./quickEdit/QuickEditQuickPick";
 import { Battery } from "./util/battery";
+import { getFullyQualifiedPath } from "./util/util";
 import { uriFromFilePath } from "./util/vscode";
 import type { VsCodeWebviewProtocol } from "./webviewProtocol";
 
@@ -162,6 +165,17 @@ async function addEntireFileToContext(
   });
 }
 
+function focusGUI() {
+  const fullScreenTab = getFullScreenTab();
+  if (!fullScreenTab) {
+    // focus sidebar
+    vscode.commands.executeCommand("continue.continueGUIView.focus");
+  } else {
+    // focus fullscreen
+    fullScreenPanel?.reveal();
+  }
+}
+
 // Copy everything over from extension.ts
 const commandsMap: (
   ide: IDE,
@@ -169,7 +183,7 @@ const commandsMap: (
   sidebar: ContinueGUIWebviewViewProvider,
   configHandler: ConfigHandler,
   diffManager: DiffManager,
-  verticalDiffManager: VerticalPerLineDiffManager,
+  verticalDiffManager: VerticalDiffManager,
   continueServerClientPromise: Promise<ContinueServerClient>,
   battery: Battery,
   quickEdit: QuickEdit,
@@ -207,18 +221,20 @@ const commandsMap: (
   ) {
     const config = await configHandler.loadConfig();
 
+    const defaultModelTitle = await sidebar.webviewProtocol.request(
+      "getDefaultModelTitle",
+      undefined,
+    );
+
     const modelTitle =
-      config.experimental?.modelRoles?.inlineEdit ??
-      (await sidebar.webviewProtocol.request(
-        "getDefaultModelTitle",
-        undefined,
-      ));
+      getModelByRole(config, "inlineEdit")?.title ?? defaultModelTitle;
 
     sidebar.webviewProtocol.request("incrementFtc", undefined);
 
     await verticalDiffManager.streamEdit(
       config.experimental?.contextMenuPrompts?.[promptName] ?? fallbackPrompt,
       modelTitle,
+      undefined,
       onlyOneInsertion,
       undefined,
       range,
@@ -229,20 +245,30 @@ const commandsMap: (
     "continue.acceptDiff": async (newFilepath?: string | vscode.Uri) => {
       captureCommandTelemetry("acceptDiff");
 
-      if (newFilepath instanceof vscode.Uri) {
-        newFilepath = newFilepath.fsPath;
+      let fullPath = newFilepath;
+
+      if (fullPath instanceof vscode.Uri) {
+        fullPath = fullPath.fsPath;
+      } else {
+        fullPath = getFullyQualifiedPath(fullPath);
       }
-      verticalDiffManager.clearForFilepath(newFilepath, true);
-      await diffManager.acceptDiff(newFilepath);
+
+      verticalDiffManager.clearForFilepath(fullPath, true);
+      await diffManager.acceptDiff(fullPath);
     },
     "continue.rejectDiff": async (newFilepath?: string | vscode.Uri) => {
       captureCommandTelemetry("rejectDiff");
 
-      if (newFilepath instanceof vscode.Uri) {
-        newFilepath = newFilepath.fsPath;
+      let fullPath = newFilepath;
+
+      if (fullPath instanceof vscode.Uri) {
+        fullPath = fullPath.fsPath;
+      } else {
+        fullPath = getFullyQualifiedPath(fullPath);
       }
-      verticalDiffManager.clearForFilepath(newFilepath, false);
-      await diffManager.rejectDiff(newFilepath);
+
+      verticalDiffManager.clearForFilepath(fullPath, false);
+      await diffManager.rejectDiff(fullPath);
     },
     "continue.acceptVerticalDiffBlock": (filepath?: string, index?: number) => {
       captureCommandTelemetry("acceptVerticalDiffBlock");
@@ -258,7 +284,7 @@ const commandsMap: (
     ) => {
       captureCommandTelemetry("quickFix");
 
-      const prompt = `How do I fix the following problem in the above code?: ${diagnosticMessage}`;
+      const prompt = `Please explain the cause of this error and how to solve it: ${diagnosticMessage}`;
 
       addCodeToContextFromRange(range, sidebar.webviewProtocol, prompt);
 
@@ -300,14 +326,7 @@ const commandsMap: (
       core.invoke("context/indexDocs", { reIndex: true });
     },
     "continue.focusContinueInput": async () => {
-      const fullScreenTab = getFullScreenTab();
-      if (!fullScreenTab) {
-        // focus sidebar
-        vscode.commands.executeCommand("continue.continueGUIView.focus");
-      } else {
-        // focus fullscreen
-        fullScreenPanel?.reveal();
-      }
+      focusGUI();
       sidebar.webviewProtocol?.request("focusContinueInput", undefined);
       await addHighlightedCodeToContext(sidebar.webviewProtocol);
     },
@@ -409,7 +428,7 @@ const commandsMap: (
     },
     "continue.hideInlineTip": () => {
       vscode.workspace
-        .getConfiguration("continue")
+        .getConfiguration(EXTENSION_NAME)
         .update("showInlineTip", false, vscode.ConfigurationTarget.Global);
     },
 
@@ -461,16 +480,24 @@ const commandsMap: (
     "continue.viewHistory": () => {
       sidebar.webviewProtocol?.request("viewHistory", undefined);
     },
+    "continue.focusContinueSessionId": async (
+      sessionId: string | undefined,
+    ) => {
+      if (!sessionId) {
+        sessionId = await vscode.window.showInputBox({
+          prompt: "Enter the Session ID",
+        });
+      }
+      sidebar.webviewProtocol?.request("focusContinueSessionId", { sessionId });
+    },
+    "continue.applyCodeFromChat": () => {
+      sidebar.webviewProtocol.request("applyCodeFromChat", undefined);
+    },
     "continue.toggleFullScreen": () => {
+      focusGUI();
+
       // Check if full screen is already open by checking open tabs
       const fullScreenTab = getFullScreenTab();
-
-      // Check if the active editor is the Continue GUI View
-      if (fullScreenTab && fullScreenTab.isActive) {
-        //Full screen open and focused - close it
-        vscode.commands.executeCommand("workbench.action.closeActiveEditor"); //this will trigger the onDidDispose listener below
-        return;
-      }
 
       if (fullScreenTab && fullScreenPanel) {
         //Full screen open, but not focused - focus it
@@ -510,6 +537,8 @@ const commandsMap: (
         null,
         extensionContext.subscriptions,
       );
+
+      vscode.commands.executeCommand("workbench.action.copyEditorToNewWindow");
     },
     "continue.openConfigJson": () => {
       ide.openFile(getConfigJsonPath());
@@ -551,7 +580,7 @@ const commandsMap: (
     "continue.toggleTabAutocompleteEnabled": () => {
       captureCommandTelemetry("toggleTabAutocompleteEnabled");
 
-      const config = vscode.workspace.getConfiguration("continue");
+      const config = vscode.workspace.getConfiguration(EXTENSION_NAME);
       const enabled = config.get("enableTabAutocomplete");
       const pauseOnBattery = config.get<boolean>(
         "pauseTabAutocompleteOnBattery",
@@ -587,7 +616,7 @@ const commandsMap: (
     "continue.openTabAutocompleteConfigMenu": async () => {
       captureCommandTelemetry("openTabAutocompleteConfigMenu");
 
-      const config = vscode.workspace.getConfiguration("continue");
+      const config = vscode.workspace.getConfiguration(EXTENSION_NAME);
       const quickPick = vscode.window.createQuickPick();
       const autocompleteModels =
         (await configHandler.loadConfig())?.tabAutocompleteModels ?? [];
@@ -613,8 +642,8 @@ const commandsMap: (
           currentStatus === StatusBarStatus.Paused
             ? StatusBarStatus.Enabled
             : currentStatus === StatusBarStatus.Disabled
-            ? StatusBarStatus.Paused
-            : StatusBarStatus.Disabled;
+              ? StatusBarStatus.Paused
+              : StatusBarStatus.Disabled;
       } else {
         // Toggle between Disabled and Enabled
         targetStatus =
@@ -623,6 +652,15 @@ const commandsMap: (
             : StatusBarStatus.Disabled;
       }
       quickPick.items = [
+        {
+          label: "$(question) Open help center",
+        },
+        {
+          label: "$(comment) Open chat (Cmd+L)",
+        },
+        {
+          label: "$(screen-full) Open full screen chat (Cmd+K Cmd+M)",
+        },
         {
           label: quickPickStatusText(targetStatus),
         },
@@ -667,6 +705,16 @@ const commandsMap: (
           configHandler.reloadConfig();
         } else if (selectedOption === "$(feedback) Give feedback") {
           vscode.commands.executeCommand("continue.giveAutocompleteFeedback");
+        } else if (selectedOption === "$(comment) Open chat (Cmd+L)") {
+          vscode.commands.executeCommand("continue.focusContinueInput");
+        } else if (
+          selectedOption ===
+          "$(screen-full) Open full screen chat (Cmd+K Cmd+M)"
+        ) {
+          vscode.commands.executeCommand("continue.toggleFullScreen");
+        } else if (selectedOption === "$(question) Open help center") {
+          focusGUI();
+          vscode.commands.executeCommand("continue.navigateTo", "/more");
         }
         quickPick.dispose();
       });
@@ -686,6 +734,10 @@ const commandsMap: (
         client.sendFeedback(feedback, lastLines);
       }
     },
+    "continue.navigateTo": (path: string) => {
+      sidebar.webviewProtocol?.request("navigateTo", { path });
+      focusGUI();
+    },
   };
 };
 
@@ -696,7 +748,7 @@ export function registerAllCommands(
   sidebar: ContinueGUIWebviewViewProvider,
   configHandler: ConfigHandler,
   diffManager: DiffManager,
-  verticalDiffManager: VerticalPerLineDiffManager,
+  verticalDiffManager: VerticalDiffManager,
   continueServerClientPromise: Promise<ContinueServerClient>,
   battery: Battery,
   quickEdit: QuickEdit,

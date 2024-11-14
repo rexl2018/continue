@@ -5,6 +5,7 @@ import {
   codeLlama70bTemplateMessages,
   deepseekTemplateMessages,
   gemmaTemplateMessage,
+  graniteTemplateMessages,
   llama2TemplateMessages,
   llama3TemplateMessages,
   llavaTemplateMessages,
@@ -46,6 +47,8 @@ const PROVIDER_HANDLES_TEMPLATING: ModelProvider[] = [
   "continue-proxy",
   "mistral",
   "sambanova",
+  "vertexai",
+  "watsonx"
 ];
 
 const PROVIDER_SUPPORTS_IMAGES: ModelProvider[] = [
@@ -58,6 +61,8 @@ const PROVIDER_SUPPORTS_IMAGES: ModelProvider[] = [
   "bedrock",
   "sagemaker",
   "continue-proxy",
+  "openrouter",
+  "vertexai"
 ];
 
 const MODEL_SUPPORTS_IMAGES: string[] = [
@@ -73,15 +78,19 @@ const MODEL_SUPPORTS_IMAGES: string[] = [
   "sonnet",
   "opus",
   "haiku",
+  "pixtral",
+  "llama3.2",
 ];
 
 function modelSupportsImages(
   provider: ModelProvider,
   model: string,
   title: string | undefined,
-  capabilities: ModelCapability | undefined
+  capabilities: ModelCapability | undefined,
 ): boolean {
-  if (capabilities?.uploadImage !== undefined) {return capabilities.uploadImage;}
+  if (capabilities?.uploadImage !== undefined) {
+    return capabilities.uploadImage;
+  }
   if (!PROVIDER_SUPPORTS_IMAGES.includes(provider)) {
     return false;
   }
@@ -110,6 +119,8 @@ const PARALLEL_PROVIDERS: ModelProvider[] = [
   "replicate",
   "together",
   "sambanova",
+  "nebius",
+  "vertexai"
 ];
 
 function llmCanGenerateInParallel(
@@ -209,6 +220,10 @@ function autodetectTemplateType(model: string): TemplateType | undefined {
     return "neural-chat";
   }
 
+  if (lower.includes("granite")) {
+    return "granite";
+  }
+
   return "chatml";
 }
 
@@ -242,6 +257,7 @@ function autodetectTemplateFunction(
       llava: llavaTemplateMessages,
       "codellama-70b": codeLlama70bTemplateMessages,
       gemma: gemmaTemplateMessage,
+      granite: graniteTemplateMessages,
       llama3: llama3TemplateMessages,
       none: null,
     };

@@ -70,8 +70,9 @@ export interface ILLM extends LLMOptions {
   llmRequestHook?: (model: string, prompt: string) => any;
   apiKey?: string;
   apiBase?: string;
+  cacheBehavior?: CacheBehavior;
 
-  engine?: string;
+  deployment?: string;
   apiVersion?: string;
   apiType?: string;
   region?: string;
@@ -271,6 +272,13 @@ export interface ContextItemId {
   itemId: string;
 }
 
+export type ContextItemUriTypes = "file" | "url";
+
+export interface ContextItemUri {
+  type: ContextItemUriTypes;
+  value: string;
+}
+
 export interface ContextItem {
   content: string;
   name: string;
@@ -278,16 +286,11 @@ export interface ContextItem {
   editing?: boolean;
   editable?: boolean;
   icon?: string;
+  uri?: ContextItemUri;
 }
 
-export interface ContextItemWithId {
-  content: string;
-  name: string;
-  description: string;
+export interface ContextItemWithId extends ContextItem {
   id: ContextItemId;
-  editing?: boolean;
-  editable?: boolean;
-  icon?: string;
 }
 
 export interface InputModifiers {
@@ -340,6 +343,7 @@ export interface LLMOptions {
   apiKey?: string;
   aiGatewaySlug?: string;
   apiBase?: string;
+  cacheBehavior?: CacheBehavior;
 
   useLegacyCompletionsEndpoint?: boolean;
 
@@ -347,7 +351,7 @@ export interface LLMOptions {
   accountId?: string;
 
   // Azure options
-  engine?: string;
+  deployment?: string;
   apiVersion?: string;
   apiType?: string;
 
@@ -359,18 +363,13 @@ export interface LLMOptions {
   region?: string;
 
   // GCP Options
-  projectId?: string;
   capabilities?: ModelCapability;
 
-  // IBM watsonx options
-  watsonxUrl?: string;
-  watsonxCreds?: string;
-  watsonxProjectId?: string;
-  watsonxStopToken?: string;
-  watsonxApiVersion?: string;
-  watsonxFullUrl?: string;
+  // GCP and Watsonx Options
+  projectId?: string;
 
-  cacheSystemMessage?: boolean;
+  // IBM watsonx Options
+  deploymentId?: string;
 }
 type RequireAtLeastOne<T, Keys extends keyof T = keyof T> = Pick<
   T,
@@ -462,7 +461,7 @@ export interface IdeSettings {
 export interface IDE {
   getIdeInfo(): Promise<IdeInfo>;
   getIdeSettings(): Promise<IdeSettings>;
-  getDiff(): Promise<string>;
+  getDiff(includeUnstaged: boolean): Promise<string>;
   getDiffForCurBranch(): Promise<string>;
   getDiffForCurFile(): Promise<string>;
   isTelemetryEnabled(): Promise<boolean>;
@@ -500,7 +499,7 @@ export interface IDE {
   getCurrentFile(): Promise<string | undefined>;
   getPinnedFiles(): Promise<string[]>;
   getSearchResults(query: string): Promise<string>;
-  subprocess(command: string): Promise<[string, string]>;
+  subprocess(command: string, cwd?: string): Promise<[string, string]>;
   getProblems(filepath?: string | undefined): Promise<Problem[]>;
   getBranch(dir: string): Promise<string>;
   getTags(artifactId: string): Promise<IndexTag[]>;
@@ -565,7 +564,7 @@ type ContextProviderName =
   | "difff"
   | "github"
   | "terminal"
-  | "locals"
+  | "debugger"
   | "open"
   | "google"
   | "search"
@@ -582,6 +581,7 @@ type ContextProviderName =
   | "gitlab-mr"
   | "os"
   | "currentFile"
+  | "greptile"
   | "outline"
   | "continue-proxy"
   | "highlights"
@@ -607,6 +607,7 @@ type TemplateType =
   | "codellama-70b"
   | "llava"
   | "gemma"
+  | "granite"
   | "llama3";
 
 type ModelProvider =
@@ -645,7 +646,11 @@ type ModelProvider =
   | "sambanova"
   | "nvidia"
   | "vllm"
-  | "mock";
+  | "mock"
+  | "cerebras"
+  | "askSage"
+  | "vertexai"
+  | "nebius";
 
 export type ModelName =
   | "AUTODETECT"
@@ -660,6 +665,8 @@ export type ModelName =
   | "gpt-4-turbo"
   | "gpt-4-turbo-preview"
   | "gpt-4-vision-preview"
+  | "o1-preview"
+  | "o1-mini"
   // Mistral
   | "codestral-latest"
   | "open-mistral-7b"
@@ -684,6 +691,15 @@ export type ModelName =
   // Llama 3
   | "llama3-8b"
   | "llama3-70b"
+  // Llama 3.1
+  | "llama3.1-8b"
+  | "llama3.1-70b"
+  | "llama3.1-405b"
+  // Llama 3.2
+  | "llama3.2-1b"
+  | "llama3.2-3b"
+  | "llama3.2-11b"
+  | "llama3.2-90b"
   // Other Open-source
   | "phi2"
   | "phind-codellama-34b"
@@ -695,6 +711,8 @@ export type ModelName =
   | "deepseek-7b"
   | "deepseek-33b"
   | "neural-chat-7b"
+  | "gemma-7b-it"
+  | "gemma2-9b-it"
   // Anthropic
   | "claude-3-5-sonnet-20240620"
   | "claude-3-opus-20240229"
@@ -727,6 +745,11 @@ export interface RequestOptions {
   extraBodyProperties?: { [key: string]: any };
   noProxy?: string[];
   clientCertificate?: ClientCertificateOptions;
+}
+
+export interface CacheBehavior {
+  cacheSystemMessage?: boolean;
+  cacheConversation?: boolean;
 }
 
 export interface ClientCertificateOptions {
@@ -791,9 +814,11 @@ export interface ModelDescription {
   requestOptions?: RequestOptions;
   promptTemplates?: { [key: string]: string };
   capabilities?: ModelCapability;
+  cacheBehavior?: CacheBehavior;
 }
 
 export type EmbeddingsProviderName =
+  | "sagemaker"
   | "bedrock"
   | "huggingface-tei"
   | "transformers.js"
@@ -806,13 +831,16 @@ export type EmbeddingsProviderName =
   | "deepinfra"
   | "nvidia"
   | "voyage"
-  | "mistral";
+  | "mistral"
+  | "nebius"
+  | "vertexai"
+  | "watsonx";
 
 export interface EmbedOptions {
   apiBase?: string;
   apiKey?: string;
   model?: string;
-  engine?: string;
+  deployment?: string;
   apiType?: string;
   apiVersion?: string;
   requestOptions?: RequestOptions;
@@ -823,6 +851,9 @@ export interface EmbedOptions {
 
   // AWS and GCP Options
   region?: string;
+
+  // GCP and Watsonx Options
+  projectId?: string;
 }
 
 export interface EmbeddingsProviderDescription extends EmbedOptions {
@@ -862,6 +893,7 @@ export interface TabAutocompleteOptions {
   debounceDelay: number;
   maxSuffixPercentage: number;
   prefixPercentage: number;
+  transform?: boolean;
   template?: string;
   multilineCompletions: "always" | "never" | "auto";
   slidingWindowPrefixPercentage: number;
@@ -875,6 +907,7 @@ export interface TabAutocompleteOptions {
   recentLinePrefixMatchMinLength: number;
   disableInFiles?: string[];
   useImports?: boolean;
+  useRootPathContext?: boolean;
 }
 
 export interface ContinueUIConfig {
@@ -943,6 +976,11 @@ interface ExperimentalConfig {
    * Automatically read LLM chat responses aloud using system TTS models
    */
   readResponseTTS?: boolean;
+
+  /**
+   * Prompt the user's LLM for a title given the current chat content
+   */
+  getChatTitles?: boolean;
 
   /**
    * If set to true, we will attempt to pull down and install an instance of Chromium

@@ -6,12 +6,12 @@ import {
   ModelDescription,
 } from "../..";
 import { renderTemplatedString } from "../../promptFiles/renderTemplatedString";
-import { DEFAULT_MAX_TOKENS } from "../constants";
 import { BaseLLM } from "../index";
 import Anthropic from "./Anthropic";
 import Azure from "./Azure";
 import Bedrock from "./Bedrock";
 import BedrockImport from "./BedrockImport";
+import Cerebras from "./Cerebras";
 import Cloudflare from "./Cloudflare";
 import Cohere from "./Cohere";
 import DeepInfra from "./DeepInfra";
@@ -30,6 +30,7 @@ import Llamafile from "./Llamafile";
 import Mistral from "./Mistral";
 import Mock from "./Mock";
 import Msty from "./Msty";
+import Nebius from "./Nebius";
 import Nvidia from "./Nvidia";
 import Ollama from "./Ollama";
 import OpenAI from "./OpenAI";
@@ -42,6 +43,8 @@ import Together from "./Together";
 import Vllm from "./Vllm";
 import WatsonX from "./WatsonX";
 import ContinueProxy from "./stubs/ContinueProxy";
+import VertexAI from "./VertexAI";
+import Asksage from "./Asksage";
 
 const LLMs = [
   Anthropic,
@@ -78,6 +81,10 @@ const LLMs = [
   Vllm,
   SambaNova,
   Mock,
+  Cerebras,
+  Asksage,
+  Nebius,
+  VertexAI
 ];
 
 export async function llmFromDescription(
@@ -112,8 +119,7 @@ export async function llmFromDescription(
       model: (desc.model || cls.defaultOptions?.model) ?? "codellama-7b",
       maxTokens:
         finalCompletionOptions.maxTokens ??
-        cls.defaultOptions?.completionOptions?.maxTokens ??
-        DEFAULT_MAX_TOKENS,
+        cls.defaultOptions?.completionOptions?.maxTokens,
     },
     systemMessage,
     writeLog,

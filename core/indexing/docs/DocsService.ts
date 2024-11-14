@@ -1,8 +1,6 @@
 import { open, type Database } from "sqlite";
 import sqlite3 from "sqlite3";
 import lancedb, { Connection } from "vectordb";
-import { ConfigHandler } from "../../config/ConfigHandler";
-import DocsContextProvider from "../../context/providers/DocsContextProvider";
 import {
   Chunk,
   ContinueConfig,
@@ -11,6 +9,9 @@ import {
   IndexingProgressUpdate,
   SiteIndexingConfig,
 } from "../..";
+import { ConfigHandler } from "../../config/ConfigHandler";
+import { addContextProvider } from "../../config/util";
+import DocsContextProvider from "../../context/providers/DocsContextProvider";
 import { FromCoreProtocol, ToCoreProtocol } from "../../protocol";
 import { GlobalContext } from "../../util/GlobalContext";
 import { IMessenger } from "../../util/messenger";
@@ -31,7 +32,7 @@ import {
   SiteIndexingResults,
 } from "./preIndexed";
 import preIndexedDocs from "./preIndexedDocs";
-import { addContextProvider } from "../../config/util";
+import { fetchFavicon, getFaviconBase64 } from "../../util/fetchFavicon";
 
 // Purposefully lowercase because lancedb converts
 export interface LanceDbDocsRow {
@@ -154,7 +155,10 @@ export default class DocsService {
         params: {},
       });
 
-      this.ide.showToast("info", "Successfuly added docs context provider");
+      await this.ide.showToast(
+        "info",
+        "Successfuly added docs context provider",
+      );
     }
 
     return res === actionMsg;
@@ -177,7 +181,7 @@ export default class DocsService {
       while (!(await generator.next()).done) {}
     }
 
-    this.ide.showToast("info", "Docs indexing completed");
+    await this.ide.showToast("info", "Docs indexing completed");
   }
 
   async list() {
@@ -250,6 +254,10 @@ export default class DocsService {
       }
     }
 
+    void Telemetry.capture("docs_pages_crawled", {
+      count: processedPages,
+    });
+
     const chunks: Chunk[] = [];
     const embeddings: number[][] = [];
 
@@ -317,7 +325,7 @@ export default class DocsService {
       await this.delete(startUrl);
     }
 
-    const favicon = await this.fetchFavicon(siteIndexingConfig);
+    const favicon = await fetchFavicon(new URL(siteIndexingConfig.startUrl));
 
     await this.add({
       siteIndexingConfig,
@@ -412,25 +420,28 @@ export default class DocsService {
 
     this.globalContext.update("curEmbeddingsProviderId", embeddingsProvider.id);
 
-    configHandler.onConfigUpdate(async (newConfig) => {
-      const oldConfig = this.config;
+    configHandler.onConfigUpdate(async ({ config: newConfig }) => {
+      if (newConfig) {
+        const oldConfig = this.config;
 
-      // Need to update class property for config at the beginning of this callback
-      // to ensure downstream methods have access to the latest config.
-      this.config = newConfig;
+        // Need to update class property for config at the beginning of this callback
+        // to ensure downstream methods have access to the latest config.
+        this.config = newConfig;
 
-      if (oldConfig.docs !== newConfig.docs) {
-        await this.syncConfigAndSqlite();
-      }
+        if (oldConfig.docs !== newConfig.docs) {
+          await this.syncConfigAndSqlite();
+        }
 
-      const shouldReindex = await this.shouldReindexDocsOnNewEmbeddingsProvider(
-        newConfig.embeddingsProvider.id,
-      );
+        const shouldReindex =
+          await this.shouldReindexDocsOnNewEmbeddingsProvider(
+            newConfig.embeddingsProvider.id,
+          );
 
-      if (shouldReindex) {
-        await this.reindexDocsOnNewEmbeddingsProvider(
-          newConfig.embeddingsProvider,
-        );
+        if (shouldReindex) {
+          await this.reindexDocsOnNewEmbeddingsProvider(
+            newConfig.embeddingsProvider,
+          );
+        }
       }
     });
   }
@@ -456,14 +467,14 @@ export default class DocsService {
 
     for (const doc of newDocs) {
       console.log(`Indexing new doc: ${doc.startUrl}`);
-      Telemetry.capture("add_docs_config", { url: doc.startUrl });
+      void Telemetry.capture("add_docs_config", { url: doc.startUrl });
 
       const generator = this.indexAndAdd(doc);
       while (!(await generator.next()).done) {}
     }
 
     for (const doc of deletedDocs) {
-      console.log(`Deleting doc: ${doc.startUrl}`);
+      // console.debug(`Deleting doc: ${doc.startUrl}`);
       await this.delete(doc.startUrl);
     }
 
@@ -526,8 +537,12 @@ export default class DocsService {
     await table.delete(`title = '${mockRowTitle}'`);
   }
 
-  private removeInvalidLanceTableNameChars(tableName: string) {
-    return tableName.replace(/:/g, "");
+  /**
+   * From Lance: Table names can only contain alphanumeric characters,
+   * underscores, hyphens, and periods
+   */
+  private sanitizeLanceTableName(name: string) {
+    return name.replace(/[^a-zA-Z0-9_.-]/g, "_");
   }
 
   private async getLanceTableNameFromEmbeddingsProvider(
@@ -536,10 +551,10 @@ export default class DocsService {
     const embeddingsProvider = await this.getEmbeddingsProvider(
       isPreIndexedDoc,
     );
-    const embeddingsProviderId = this.removeInvalidLanceTableNameChars(
-      embeddingsProvider.id,
+
+    const tableName = this.sanitizeLanceTableName(
+      `${DocsService.lanceTableName}${embeddingsProvider.id}`,
     );
-    const tableName = `${DocsService.lanceTableName}${embeddingsProviderId}`;
 
     return tableName;
   }
@@ -691,7 +706,12 @@ export default class DocsService {
 
     const siteEmbeddings = JSON.parse(data) as SiteIndexingResults;
     const startUrl = new URL(siteEmbeddings.url).toString();
-    const favicon = await this.fetchFavicon(preIndexedDocs[startUrl]);
+
+    const faviconUrl = preIndexedDocs[startUrl].faviconUrl;
+    const favicon =
+      typeof faviconUrl === "string"
+        ? await getFaviconBase64(faviconUrl)
+        : undefined;
 
     await this.add({
       favicon,
@@ -702,30 +722,6 @@ export default class DocsService {
       chunks: siteEmbeddings.chunks,
       embeddings: siteEmbeddings.chunks.map((c) => c.embedding),
     });
-  }
-
-  private async fetchFavicon(siteIndexingConfig: SiteIndexingConfig) {
-    const faviconUrl =
-      siteIndexingConfig.faviconUrl ??
-      new URL("/favicon.ico", siteIndexingConfig.startUrl);
-
-    try {
-      const response = await fetch(faviconUrl);
-      const arrayBuffer = await response.arrayBuffer();
-      const base64 = btoa(
-        new Uint8Array(arrayBuffer).reduce(
-          (data, byte) => data + String.fromCharCode(byte),
-          "",
-        ),
-      );
-      const mimeType = response.headers.get("content-type") || "image/x-icon";
-
-      return `data:${mimeType};base64,${base64}`;
-    } catch {
-      console.error(`Failed to fetch favicon: ${faviconUrl}`);
-    }
-
-    return undefined;
   }
 
   private async shouldReindexDocsOnNewEmbeddingsProvider(

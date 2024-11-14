@@ -61,7 +61,7 @@ const StyledListboxButton = styled(Listbox.Button)`
   }
 `;
 
-const StyledListboxOptions = styled(Listbox.Options)<{ showAbove: boolean }>`
+const StyledListboxOptions = styled(Listbox.Options)<{ $showabove: boolean }>`
   margin-top: 4px;
   position: absolute;
   list-style: none;
@@ -81,12 +81,12 @@ const StyledListboxOptions = styled(Listbox.Options)<{ showAbove: boolean }>`
 
   scrollbar-width: none;
 
-  ${(props) => (props.showAbove ? "bottom: 100%;" : "top: 100%;")}
+  ${(props) => (props.$showabove ? "bottom: 100%;" : "top: 100%;")}
 `;
 
 const StyledListboxOption = styled(Listbox.Option)<{ isDisabled?: boolean }>`
   border-radius: ${defaultBorderRadius};
-  padding: 8px 12px;
+  padding: 6px 12px;
 
   ${({ isDisabled }) =>
     !isDisabled &&
@@ -188,25 +188,26 @@ function ModelOption({
       onMouseLeave={() => setHovered(false)}
       onClick={handleOptionClick}
     >
-      <div className="flex flex-col w-full gap-0.5">
-        <div className="flex items-center justify-between w-full">
-          <div className="flex items-center flex-grow">
-            <CubeIcon className="w-4 h-4 mr-2 flex-shrink-0" />
-            <span className="flex-grow">{option.title}</span>
+      <div className="flex w-full flex-col gap-0.5">
+        <div className="flex w-full items-center justify-between">
+          <div className="flex flex-grow items-center">
+            <CubeIcon className="mr-2 h-4 w-4 flex-shrink-0" />
+            <span className="flex-grow">
+              {option.title}
+              {showMissingApiKeyMsg && (
+                <span className="ml-2 text-[10px] italic">
+                  (Missing API key)
+                </span>
+              )}
+            </span>
           </div>
-          <div className="flex items-center ml-2">
+          <div className="ml-5 flex items-center">
             <StyledCog6ToothIcon hovered={hovered} onClick={onClickGear} />
             {showDelete && (
               <StyledTrashIcon hovered={hovered} onClick={onClickDelete} />
             )}
           </div>
         </div>
-
-        {showMissingApiKeyMsg && (
-          <span className="ml-6 text-xs italic text-[8px]">
-            Missing API key
-          </span>
-        )}
       </div>
     </StyledListboxOption>
   );
@@ -257,7 +258,7 @@ function ModelSelect() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "'" && isMetaEquivalentKeyPressed(event)) {
+      if (event.key === "'" && isMetaEquivalentKeyPressed(event as any)) {
         const direction = event.shiftKey ? -1 : 1;
         const currentIndex = options.findIndex(
           (option) => option.value === defaultModel?.title,
@@ -318,12 +319,20 @@ function ModelSelect() {
           style={{ padding: 0 }}
           onClick={calculatePosition}
         >
-          <span className="hover:underline">
-            {modelSelectTitle(defaultModel) || "Select model"}{" "}
-            <ChevronDownIcon className="h-2.5 w-2.5" aria-hidden="true" />
-          </span>
+          <div className="flex max-w-[33vw] items-center gap-0.5 text-gray-400 transition-colors duration-200">
+            <span className="truncate">
+              {modelSelectTitle(defaultModel) || "Select model"}{" "}
+            </span>
+            <ChevronDownIcon
+              className="h-3 w-3 flex-shrink-0"
+              aria-hidden="true"
+            />
+          </div>
         </StyledListboxButton>
-        <StyledListboxOptions showAbove={showAbove} className="z-50">
+        <StyledListboxOptions
+          $showabove={showAbove}
+          className="z-50 max-w-[90vw]"
+        >
           <div className={`max-h-[${MAX_HEIGHT_PX}px]`}>
             {sortedOptions.map((option, idx) => (
               <ModelOption
@@ -339,15 +348,13 @@ function ModelSelect() {
           <div className="mt-auto">
             {selectedProfileId === "local" && (
               <>
-                {options.length > 0 && <Divider className="!my-0" />}
-
                 <StyledListboxOption
                   key={options.length}
                   onClick={onClickAddModel}
                   value={"addModel" as any}
                 >
                   <div className="flex items-center py-0.5">
-                    <PlusIcon className="w-4 h-4 mr-2" />
+                    <PlusIcon className="mr-2 h-4 w-4" />
                     Add Chat model
                   </div>
                 </StyledListboxOption>

@@ -38,7 +38,7 @@ class FileSystemIde implements IDE {
     throw new Error("Method not implemented.");
   }
   onDidChangeActiveTextEditor(callback: (filepath: string) => void): void {
-    throw new Error("Method not implemented.");
+    return;
   }
 
   async getIdeSettings(): Promise<IdeSettings> {
@@ -124,7 +124,7 @@ class FileSystemIde implements IDE {
     return Promise.resolve([]);
   }
 
-  getDiff(): Promise<string> {
+  getDiff(includeUnstaged: boolean): Promise<string> {
     return Promise.resolve("");
   }
 
@@ -245,7 +245,7 @@ class FileSystemIde implements IDE {
     return Promise.resolve([]);
   }
 
-  async subprocess(command: string): Promise<[string, string]> {
+  async subprocess(command: string, cwd?: string): Promise<[string, string]> {
     return ["", ""];
   }
 }

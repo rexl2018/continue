@@ -32,7 +32,7 @@ Once it has been downloaded, you should begin to see completions in VS Code.
 
 All of the configuration options available for chat models are available to use for tab-autocomplete. For example, if you wanted to use a remote Ollama instance you would edit your `config.json` like this (note that it is not inside the models array):
 
-```json title=~/.continue/config.json
+```json title="config.json"
 {
     "tabAutocompleteModel": {
         "title": "Tab Autocomplete Model",
@@ -44,7 +44,7 @@ All of the configuration options available for chat models are available to use 
 }
 ```
 
-If you aren't yet familiar with the available options, you can find the full reference [here](../config.mdx).
+If you aren't yet familiar with the available options, you can find the full reference [here](./ways-to-configure.md).
 
 ## Configuration Options
 
@@ -73,7 +73,7 @@ This object allows you to customize the behavior of tab-autocomplete. The availa
 
 ### Full example
 
-```json title=~/.continue/config.json
+```json title="config.json"
 {
   "tabAutocompleteModel": {
     "title": "Tab Autocomplete Model",
@@ -93,7 +93,7 @@ This object allows you to customize the behavior of tab-autocomplete. The availa
 
 ### I want better completions, should I use GPT-4?
 
-Perhaps surprisingly, the answer is no. The models that we suggest for autocomplete are trained with a highly specific prompt format, which allows them to respond to requests for completing code (see examples of these prompts [here](https://github.com/continuedev/continue/blob/d2bc6359e8ebf647892ec953e418042dc7f8a685/core/autocomplete/templates.ts)). Some of the best commercial models like GPT-4 or Claude are not trained with this prompt format, which means that they won't generate useful completions. Luckily, a huge model is not required for great autocomplete. Most of the state-of-the-art autocomplete models are no more than 10b parameters, and increasing beyond this does not significantly improve performance.
+Perhaps surprisingly, the answer is no. The models that we suggest for autocomplete are trained with a highly specific prompt format, which allows them to respond to requests for completing code (see examples of these prompts [here](https://github.com/continuedev/continue/blob/main/core/autocomplete/templates.ts)). Some of the best commercial models like GPT-4 or Claude are not trained with this prompt format, which means that they won't generate useful completions. Luckily, a huge model is not required for great autocomplete. Most of the state-of-the-art autocomplete models are no more than 10b parameters, and increasing beyond this does not significantly improve performance.
 
 ### I'm not seeing any completions
 
@@ -119,7 +119,7 @@ To ensure that you receive multi-line completions, you can set `"multilineComple
 
 Yes, in VS Code, if you don't want to be shown suggestions automatically you can:
 
-1. Set `"editor.inlineSuggest.enabled": false` in VS Code settings to disabe automatic suggestions
+1. Set `"editor.inlineSuggest.enabled": false` in VS Code settings to disable automatic suggestions
 2. Open "Keyboard Shortcuts" (cmd/ctrl+k, cmd/ctrl+s) and search for `editor.action.inlineSuggest.trigger`
 3. Click the "+" icon to add a new keybinding
 4. Press the key combination you want to use to trigger suggestions (e.g. `ctrl+space`)
@@ -136,6 +136,8 @@ This is a built-in feature of VS Code, but it's just a bit hidden. See this grea
 Click the "Continue" button in the status panel at the bottom right of the screen. The checkmark will become a "cancel" symbol and you will no longer see completions. You can click again to turn it back on.
 
 Alternatively, open VS Code settings, search for "Continue" and uncheck the box for "Enable Tab Autocomplete".
+
+You can also use the default shortcut to disable autocomplete directly: press `ctrl/cmd + K`, `ctrl/cmd + A`. This will turn off autocomplete without navigating through settings.
 
 #### JetBrains
 
