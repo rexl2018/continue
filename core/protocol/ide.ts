@@ -1,6 +1,9 @@
+import { ControlPlaneSessionInfo } from "../control-plane/client";
+
 import type {
   ContinueRcJson,
   DiffLine,
+  FileStatsMap,
   FileType,
   IDE,
   IdeInfo,
@@ -11,8 +14,8 @@ import type {
   Range,
   RangeInFile,
   Thread,
+  TerminalOptions
 } from "../";
-import { ControlPlaneSessionInfo } from "../control-plane/client";
 
 export interface GetGhTokenArgs {
   force?: boolean;
@@ -22,21 +25,16 @@ export type ToIdeFromWebviewOrCoreProtocol = {
   // Methods from IDE type
   getIdeInfo: [undefined, IdeInfo];
   getWorkspaceDirs: [undefined, string[]];
-  listFolders: [undefined, string[]];
   writeFile: [{ path: string; contents: string }, void];
   showVirtualFile: [{ name: string; content: string }, void];
-  getContinueDir: [undefined, string];
   openFile: [{ path: string }, void];
-  runCommand: [{ command: string }, void];
+  openUrl: [string, void];
+  runCommand: [{ command: string, options?: TerminalOptions }, void];
   getSearchResults: [{ query: string }, string];
   subprocess: [{ command: string; cwd?: string }, [string, string]];
   saveFile: [{ filepath: string }, void];
   fileExists: [{ filepath: string }, boolean];
   readFile: [{ filepath: string }, string];
-  showDiff: [
-    { filepath: string; newContents: string; stepIndex: number },
-    void,
-  ];
   diffLine: [
     {
       diffLine: DiffLine;
@@ -48,7 +46,17 @@ export type ToIdeFromWebviewOrCoreProtocol = {
   ];
   getProblems: [{ filepath: string }, Problem[]];
   getOpenFiles: [undefined, string[]];
-  getCurrentFile: [undefined, string | undefined];
+  getCurrentFile: [
+    undefined,
+    (
+      | undefined
+      | {
+          isUntitled: boolean;
+          path: string;
+          contents: string;
+        }
+    ),
+  ];
   getPinnedFiles: [undefined, string[]];
   showLines: [{ filepath: string; startLine: number; endLine: number }, void];
   readRangeInFile: [{ filepath: string; range: Range }, string];
@@ -80,7 +88,7 @@ export type ToIdeFromWebviewOrCoreProtocol = {
   ];
   getGitRootPath: [{ dir: string }, string | undefined];
   listDir: [{ dir: string }, [string, FileType][]];
-  getLastModified: [{ files: string[] }, { [path: string]: number }];
+  getFileStats: [{ files: string[] }, FileStatsMap];
 
   gotoDefinition: [{ location: Location }, RangeInFile[]];
 
@@ -90,7 +98,6 @@ export type ToIdeFromWebviewOrCoreProtocol = {
     ControlPlaneSessionInfo | undefined,
   ];
   logoutOfControlPlane: [undefined, void];
-  pathSep: [undefined, string];
 };
 
 export type ToWebviewOrCoreFromIdeProtocol = {

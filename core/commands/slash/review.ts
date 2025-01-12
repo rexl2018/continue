@@ -1,5 +1,5 @@
 import { ChatMessage, SlashCommand } from "../../index.js";
-import { stripImages } from "../../llm/images.js";
+import { renderChatMessage } from "../../util/messageContent.js";
 
 const prompt = `
      Review the following code, focusing on design issues, algorithm issues, error handling issues, null pointer issues, index overflow issues, concurrency issues, coding style issue, etc. Provide feedback with these guidelines:
@@ -44,10 +44,11 @@ const ReviewMessageCommand: SlashCommand = {
 
     const content = `${prompt} \r\n ${reviewText}`;
 
-    for await (const chunk of llm.streamChat([
-      { role: "user", content: content },
-    ])) {
-      yield stripImages(chunk.content);
+    for await (const chunk of llm.streamChat(
+      [{ role: "user", content: content }],
+      new AbortController().signal,
+    )) {
+      yield renderChatMessage(chunk);
     }
   },
 };

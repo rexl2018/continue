@@ -1,4 +1,3 @@
-import { INSTRUCTIONS_BASE_ITEM } from "./utils";
 import { BaseContextProvider } from "../";
 import {
   Chunk,
@@ -10,7 +9,8 @@ import {
 } from "../..";
 import DocsService from "../../indexing/docs/DocsService";
 import preIndexedDocs from "../../indexing/docs/preIndexedDocs";
-import { Telemetry } from "../../util/posthog";
+
+import { INSTRUCTIONS_BASE_ITEM } from "./utils";
 
 class DocsContextProvider extends BaseContextProvider {
   static nRetrieve = 30;
@@ -80,51 +80,31 @@ class DocsContextProvider extends BaseContextProvider {
     query: string,
     extras: ContextProviderExtras,
   ): Promise<ContextItem[]> {
-    const docsService = DocsService.getSingleton();
+    const useReranking = this.options?.useReranking ?? true;
 
+    // Get docs service
+    const docsService = DocsService.getSingleton();
     if (!docsService) {
       console.error(`${DocsService.name} has not been initialized`);
       return [];
     }
+    await docsService.isInitialized;
 
-    const isJetBrainsAndPreIndexedDocsProvider =
-      await docsService.isJetBrainsAndPreIndexedDocsProvider();
-
-    if (isJetBrainsAndPreIndexedDocsProvider) {
-      await extras.ide.showToast(
-        "error",
-        `${DocsService.preIndexedDocsEmbeddingsProvider.id} is configured as ` +
-          "the embeddings provider, but it cannot be used with JetBrains. " +
-          "Please select a different embeddings provider to use the '@docs' " +
-          "context provider.",
-      );
-
+    // Get chunks
+    let chunks = await docsService.retrieveChunksFromQuery(
+      extras.fullInput, // confusing: fullInput = the query, query = startUrl in this case
+      query,
+      this.options?.nRetrieve ?? DocsContextProvider.nRetrieve,
+    );
+    if (!chunks?.length) {
       return [];
     }
 
-    const preIndexedDoc = preIndexedDocs[query];
-
-    if (!!preIndexedDoc) {
-      void Telemetry.capture("docs_pre_indexed_doc_used", {
-        doc: preIndexedDoc["title"],
-      });
-    }
-
-    const embeddingsProvider = await docsService.getEmbeddingsProvider(
-      !!preIndexedDoc,
-    );
-
-    const [vector] = await embeddingsProvider.embed([extras.fullInput]);
-
-    let chunks = await docsService.retrieveChunks(
-      query,
-      vector,
-      this.options?.nRetrieve ?? DocsContextProvider.nRetrieve,
-    );
-
+    // We found chunks, so check if there's a favicon for the docs page
     const favicon = await docsService.getFavicon(query);
 
-    if (extras.reranker) {
+    // Rerank if there's a reranker
+    if (useReranking && extras.reranker) {
       chunks = await this._rerankChunks(
         chunks,
         extras.reranker,
@@ -167,18 +147,30 @@ class DocsContextProvider extends BaseContextProvider {
   async loadSubmenuItems(
     args: LoadSubmenuItemsArgs,
   ): Promise<ContextSubmenuItem[]> {
+    // Get docs service
     const docsService = DocsService.getSingleton();
-
     if (!docsService) {
       console.error(`${DocsService.name} has not been initialized`);
       return [];
     }
+    await docsService.isInitialized;
 
-    const docs = (await docsService.list()) ?? [];
-    const canUsePreindexedDocs = await docsService.canUsePreindexedDocs();
-
+    // Create map of docs url -> submenu item
     const submenuItemsMap = new Map<string, ContextSubmenuItem>();
 
+    // Add custom docs from config
+    const docs = (await docsService.listMetadata()) ?? [];
+    for (const { startUrl, title, favicon } of docs) {
+      submenuItemsMap.set(startUrl, {
+        title,
+        id: startUrl,
+        description: new URL(startUrl).hostname,
+        icon: favicon,
+      });
+    }
+
+    // Add pre-indexed docs if supported
+    const canUsePreindexedDocs = await docsService.canUsePreindexedDocs();
     if (canUsePreindexedDocs) {
       for (const { startUrl, title } of Object.values(preIndexedDocs)) {
         submenuItemsMap.set(startUrl, {
@@ -192,17 +184,8 @@ class DocsContextProvider extends BaseContextProvider {
       }
     }
 
-    for (const { startUrl, title, favicon } of docs) {
-      submenuItemsMap.set(startUrl, {
-        title,
-        id: startUrl,
-        description: new URL(startUrl).hostname,
-        icon: favicon,
-      });
-    }
-
+    // Create array and sort if pre-indexed is supported
     const submenuItems = Array.from(submenuItemsMap.values());
-
     if (canUsePreindexedDocs) {
       return this._sortByPreIndexedDocs(submenuItems);
     }

@@ -7,6 +7,13 @@ const darkCodeTheme = themes.dracula;
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
+  // Docusaurus V3.6 experimental faster compile features
+  // https://docusaurus.io/blog/releases/3.6#adoption-strategy
+  future: {
+    experimental_faster: true,
+  },
+
+
   title: "Continue",
   tagline:
     "the open-source library for accelerating software development with language models",
@@ -31,7 +38,10 @@ const config = {
   // to replace "en" with "zh-Hans".
   i18n: {
     defaultLocale: "en",
-    locales: ["en"],
+    locales: [
+      "en",
+      // "zh-CN"
+    ],
   },
 
   themes: [],
@@ -81,7 +91,7 @@ const config = {
             type: "docSidebar",
             sidebarId: "docsSidebar",
             position: "left",
-            label: "Docs",
+            label: "User Guide",
             href: "/",
           },
           {
@@ -109,6 +119,10 @@ const config = {
             label: "Discord",
             position: "right",
             className: "discord-navbar",
+          },
+          {
+            type: "localeDropdown",
+            position: "right",
           },
         ],
       },
@@ -374,7 +388,11 @@ const config = {
           },
           {
             to: "/customize/model-providers/more/together",
-            from: "/reference/Model Providers/togetherllm",
+            from: "/reference/Model Providers/together",
+          },
+          {
+            to: "/customize/model-providers/more/novita",
+            from: "/reference/Model Providers/novita",
           },
           {
             to: "/customize/model-providers/more/vllm",
@@ -383,6 +401,10 @@ const config = {
           {
             to: "/customize/model-providers/more/watsonx",
             from: "/reference/Model Providers/watsonx",
+          },
+          {
+            to: "/customize/model-providers/more/nebius",
+            from: "/reference/Model Providers/nebius",
           },
           // Sidebar items that should route directly to a subpage
           {

@@ -1,21 +1,17 @@
+import { ChatMessage, DiffLine, ILLM, Prediction } from "../";
 import {
   filterCodeBlockLines,
   filterEnglishLinesAtEnd,
   filterEnglishLinesAtStart,
   filterLeadingAndTrailingNewLineInsertion,
+  removeTrailingWhitespace,
   skipLines,
   stopAtLines,
-} from "../autocomplete/streamTransforms/lineStream.js";
-import { streamDiff } from "../diff/streamDiff.js";
-import { streamLines } from "../diff/util.js";
-import {
-  ChatMessage,
-  DiffLine,
-  ILLM,
-  LLMFullCompletionOptions,
-} from "../index.js";
-import { gptEditPrompt } from "../llm/templates/edit.js";
-import { Telemetry } from "../util/posthog.js";
+} from "../autocomplete/filtering/streamTransforms/lineStream";
+import { streamDiff } from "../diff/streamDiff";
+import { streamLines } from "../diff/util";
+import { gptEditPrompt } from "../llm/templates/edit";
+import { Telemetry } from "../util/posthog";
 
 function constructPrompt(
   prefix: string,
@@ -35,7 +31,7 @@ function constructPrompt(
   });
 }
 
-async function* addIndentation(
+export async function* addIndentation(
   diffLineGenerator: AsyncGenerator<DiffLine>,
   indentation: string,
 ): AsyncGenerator<DiffLine> {
@@ -94,10 +90,20 @@ export async function* streamDiffLines(
   );
   const inept = modelIsInept(llm.model);
 
+  const prediction: Prediction = {
+    type: "content",
+    content: highlighted,
+  };
+
   const completion =
     typeof prompt === "string"
-      ? llm.streamComplete(prompt, { raw: true })
-      : llm.streamChat(prompt);
+      ? llm.streamComplete(prompt, new AbortController().signal, {
+          raw: true,
+          prediction,
+        })
+      : llm.streamChat(prompt, new AbortController().signal, {
+          prediction,
+        });
 
   let lines = streamLines(completion);
 
@@ -105,6 +111,7 @@ export async function* streamDiffLines(
   lines = filterCodeBlockLines(lines);
   lines = stopAtLines(lines, () => {});
   lines = skipLines(lines);
+  lines = removeTrailingWhitespace(lines);
   if (inept) {
     // lines = fixCodeLlamaFirstLineIndentation(lines);
     lines = filterEnglishLinesAtEnd(lines);

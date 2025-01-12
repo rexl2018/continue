@@ -1,7 +1,8 @@
-import ignore from "ignore";
-import path from "path";
-import os from "os";
 import fs from "fs";
+
+import ignore from "ignore";
+
+import { getGlobalContinueIgnorePath } from "../util/paths";
 
 export const DEFAULT_IGNORE_FILETYPES = [
   "*.DS_Store",
@@ -67,6 +68,7 @@ export const DEFAULT_IGNORE_FILETYPES = [
   "*.gitkeep",
   "*.continueignore",
   "config.json",
+  "config.yaml",
   "*.csv",
   "*.uasset",
   "*.pdb",
@@ -101,6 +103,7 @@ export const DEFAULT_IGNORE_DIRS = [
   "__pycache__/",
   "site-packages/",
   ".gradle/",
+  ".mvn/",
   ".cache/",
   "gems/",
   "vendor/",
@@ -118,17 +121,7 @@ export function gitIgArrayFromFile(file: string) {
     .filter((l) => !/^#|^$/.test(l)); // Remove empty lines
 }
 
-export const GLOBAL_CONTINUEIGNORE_PATH = path.join(os.homedir(), ".continue", ".continueignore");
-
 export const getGlobalContinueIgArray = () => {
-  try {
-    const contents = fs.readFileSync(GLOBAL_CONTINUEIGNORE_PATH, "utf8");
-    return gitIgArrayFromFile(contents);
-  } catch (error) {
-    // If the file doesn't exist, that's okay
-    if (error instanceof Error && ("code" in error) && error.code === "ENOENT") {
-      return [];
-    }
-    throw error;
-  }
+  const contents = fs.readFileSync(getGlobalContinueIgnorePath(), "utf8");
+  return gitIgArrayFromFile(contents);
 };

@@ -2,18 +2,21 @@ import {
   ArrowRightIcon,
   ArrowUpOnSquareIcon,
   AtSymbolIcon,
+  Bars3BottomLeftIcon,
   BoltIcon,
   BookOpenIcon,
+  BugAntIcon,
+  CircleStackIcon,
   CodeBracketIcon,
   CommandLineIcon,
-  ExclamationCircleIcon,
+  CpuChipIcon,
+  DocumentTextIcon,
   ExclamationTriangleIcon,
   FolderIcon,
   FolderOpenIcon,
   GlobeAltIcon,
-  HashtagIcon,
   MagnifyingGlassIcon,
-  PencilIcon,
+  PaperClipIcon,
   PlusIcon,
   SparklesIcon,
   TrashIcon,
@@ -21,6 +24,7 @@ import {
 import { Editor } from "@tiptap/react";
 import {
   forwardRef,
+  useContext,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -36,15 +40,17 @@ import {
   vscListActiveForeground,
   vscQuickInputBackground,
 } from "..";
-import {
-  setDialogMessage,
-  setShowDialog,
-} from "../../redux/slices/uiStateSlice";
-import ButtonWithTooltip from "../ButtonWithTooltip";
+import { IdeMessengerContext } from "../../context/IdeMessenger";
+import { setDialogMessage, setShowDialog } from "../../redux/slices/uiSlice";
 import FileIcon from "../FileIcon";
 import SafeImg from "../SafeImg";
 import AddDocsDialog from "../dialogs/AddDocsDialog";
+import HeaderButtonWithToolTip from "../gui/HeaderButtonWithToolTip";
 import { ComboBoxItem, ComboBoxItemType } from "./types";
+import { DiscordIcon } from "../svg/DiscordIcon";
+import { GoogleIcon } from "../svg/GoogleIcon";
+import { GitlabIcon } from "../svg/GitlabIcon";
+import { GithubIcon } from "../svg/GithubIcon";
 
 const ICONS_FOR_DROPDOWN: { [key: string]: any } = {
   file: FolderIcon,
@@ -58,22 +64,31 @@ const ICONS_FOR_DROPDOWN: { [key: string]: any } = {
   problems: ExclamationTriangleIcon,
   folder: FolderIcon,
   docs: BookOpenIcon,
-  issue: ExclamationCircleIcon,
-  trash: TrashIcon,
   web: GlobeAltIcon,
+  clipboard: PaperClipIcon,
+  database: CircleStackIcon,
+  postgres: CircleStackIcon,
+  debugger: BugAntIcon,
+  os: CpuChipIcon,
+  tree: Bars3BottomLeftIcon,
+  "prompt-files": DocumentTextIcon,
   "repo-map": FolderIcon,
-  "/edit": PencilIcon,
   "/clear": TrashIcon,
-  "/comment": HashtagIcon,
   "/share": ArrowUpOnSquareIcon,
   "/cmd": CommandLineIcon,
+  issue: GithubIcon,
+  discord: DiscordIcon,
+  google: GoogleIcon,
+  "gitlab-mr": GitlabIcon,
+  http: GlobeAltIcon,
 };
 
-export function getIconFromDropdownItem(id: string, type: ComboBoxItemType) {
-  return (
-    ICONS_FOR_DROPDOWN[id] ??
-    (type === "contextProvider" ? AtSymbolIcon : BoltIcon)
-  );
+export function getIconFromDropdownItem(
+  id: string | undefined,
+  type: ComboBoxItemType,
+) {
+  const typeIcon = type === "contextProvider" ? AtSymbolIcon : BoltIcon;
+  return id ? (ICONS_FOR_DROPDOWN[id] ?? typeIcon) : typeIcon;
 }
 
 function DropdownIcon(props: { className?: string; item: ComboBoxItem }) {
@@ -123,7 +138,7 @@ const ItemsDiv = styled.div`
   overflow-y: auto;
   max-height: 330px;
   padding: 0.2rem;
-  position: relative;
+  position: relative; // absolute to test tippy.js bug
 
   background-color: ${vscQuickInputBackground};
   /* backdrop-filter: blur(12px); */
@@ -177,6 +192,8 @@ interface MentionListProps {
 const MentionList = forwardRef((props: MentionListProps, ref) => {
   const dispatch = useDispatch();
 
+  const ideMessenger = useContext(IdeMessengerContext);
+
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const [subMenuTitle, setSubMenuTitle] = useState<string | undefined>(
@@ -208,6 +225,24 @@ const MentionList = forwardRef((props: MentionListProps, ref) => {
         },
         description: "Add a new documentation source",
       });
+    } else if (subMenuTitle === ".prompt files") {
+      items.push({
+        title: "New .prompt file",
+        type: "action",
+        action: () => {
+          ideMessenger.post("config/newPromptFile", undefined);
+          const { tr } = props.editor.view.state;
+          const text = tr.doc.textBetween(0, tr.selection.from);
+          const start = text.lastIndexOf("@");
+          if (start !== -1) {
+            props.editor.view.dispatch(
+              tr.delete(start, tr.selection.from).scrollIntoView(),
+            );
+          }
+          props.onClose(); // Escape the mention list after creating a new prompt file
+        },
+        description: "Create a new .prompt file",
+      });
     }
 
     setAllItems(items);
@@ -221,7 +256,7 @@ const MentionList = forwardRef((props: MentionListProps, ref) => {
     }
   }, [querySubmenuItem]);
 
-  const selectItem = (index) => {
+  const selectItem = (index: number) => {
     const item = allItems[index];
 
     if (item.type === "action" && item.action) {
@@ -234,7 +269,9 @@ const MentionList = forwardRef((props: MentionListProps, ref) => {
       item.contextProvider?.type === "submenu"
     ) {
       setSubMenuTitle(item.description);
-      props.enterSubmenu(props.editor, item.id);
+      if (item.id) {
+        props.enterSubmenu?.(props.editor, item.id);
+      }
       return;
     }
 
@@ -291,7 +328,7 @@ const MentionList = forwardRef((props: MentionListProps, ref) => {
   useEffect(() => setSelectedIndex(0), [allItems]);
 
   useImperativeHandle(ref, () => ({
-    onKeyDown: ({ event }) => {
+    onKeyDown: ({ event }: { event: KeyboardEvent }) => {
       if (event.key === "ArrowUp") {
         upHandler();
         return true;
@@ -335,13 +372,16 @@ const MentionList = forwardRef((props: MentionListProps, ref) => {
   }, [allItems]);
 
   return (
-    <ItemsDiv className="items-container">
+    <ItemsDiv>
       {querySubmenuItem ? (
         <QueryInput
           rows={1}
           ref={queryInputRef}
           placeholder={querySubmenuItem.description}
           onKeyDown={(e) => {
+            if (!queryInputRef.current) {
+              return;
+            }
             if (e.key === "Enter") {
               if (e.shiftKey) {
                 queryInputRef.current.innerText += "\n";
@@ -362,7 +402,6 @@ const MentionList = forwardRef((props: MentionListProps, ref) => {
       ) : (
         <>
           {subMenuTitle && <ItemDiv className="mb-2">{subMenuTitle}</ItemDiv>}
-          {/* <CustomScrollbarDiv className="overflow-y-scroll max-h-96"> */}
           {allItems.length ? (
             allItems.map((item, index) => (
               <ItemDiv
@@ -375,14 +414,14 @@ const MentionList = forwardRef((props: MentionListProps, ref) => {
                 onClick={() => selectItem(index)}
                 onMouseEnter={() => setSelectedIndex(index)}
               >
-                <span className="flex justify-between w-full items-center">
+                <span className="flex w-full items-center justify-between">
                   <div className="flex items-center justify-center">
                     {showFileIconForItem(item) && (
                       <FileIcon
                         height="20px"
                         width="20px"
                         filename={item.description}
-                      ></FileIcon>
+                      />
                     )}
                     {!showFileIconForItem(item) && (
                       <>
@@ -394,13 +433,13 @@ const MentionList = forwardRef((props: MentionListProps, ref) => {
                   </div>
                   <span
                     style={{
-                      color: vscListActiveForeground,
+                      color: lightGray,
                       float: "right",
                       textAlign: "right",
                       opacity: index !== selectedIndex ? 0 : 1,
                       minWidth: "30px",
                     }}
-                    className="whitespace-nowrap overflow-hidden overflow-ellipsis ml-2 flex items-center"
+                    className="ml-2 flex items-center overflow-hidden overflow-ellipsis whitespace-nowrap"
                   >
                     {item.description}
                     {item.type === "contextProvider" &&
@@ -414,7 +453,7 @@ const MentionList = forwardRef((props: MentionListProps, ref) => {
                     {item.subActions?.map((subAction) => {
                       const Icon = ICONS_FOR_DROPDOWN[subAction.icon];
                       return (
-                        <ButtonWithTooltip
+                        <HeaderButtonWithToolTip
                           onClick={(e) => {
                             subAction.action(item);
                             e.stopPropagation();
@@ -424,7 +463,7 @@ const MentionList = forwardRef((props: MentionListProps, ref) => {
                           text={undefined}
                         >
                           <Icon width="1.2em" height="1.2em" />
-                        </ButtonWithTooltip>
+                        </HeaderButtonWithToolTip>
                       );
                     })}
                   </span>

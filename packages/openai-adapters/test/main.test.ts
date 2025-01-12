@@ -268,11 +268,29 @@ const COMPLETION_TESTS: ({ chatOnly?: boolean } & LlmApiConfig)[] = [
     chatOnly: true,
   },
   {
+    provider: "novita",
+    model: "meta-llama/llama-3.1-8b-instruct",
+    apiKey: process.env.NOVITA_API_KEY!,
+    chatOnly: true,
+  },
+  {
     provider: "sambanova",
     model: "Meta-Llama-3.1-8B-Instruct",
     apiKey: process.env.SAMBANOVA_API_KEY!,
     chatOnly: true,
   },
+  {
+    provider: "nebius",
+    model: "llama3.1-8b",
+    apiKey: process.env.NEBIUS_API_KEY!,
+    chatOnly: true,
+  },
+  {
+    provider: "scaleway",
+    model: "llama3.1-8b",
+    apiKey: process.env.SCALEWAY_API_KEY!,
+    chatOnly: true,
+  },  
 ];
 
 const FIM_TESTS: LlmApiConfig[] = [
@@ -297,7 +315,7 @@ const EMBEDDINGS_TESTS: LlmApiConfig[] = [
   },
   {
     provider: "openai",
-    model: "voyage-code-2",
+    model: "voyage-code-3",
     apiKey: process.env.VOYAGE_API_KEY!,
     apiBase: "https://api.voyageai.com/v1/",
   },
@@ -311,6 +329,16 @@ const EMBEDDINGS_TESTS: LlmApiConfig[] = [
     model: "models/text-embedding-004",
     apiKey: process.env.GEMINI_API_KEY!,
   },
+  {
+    provider: "nebius",
+    model: "BAAI/bge-en-icl",
+    apiKey: process.env.NEBIUS_API_KEY!,
+  },
+  {
+    provider: "scaleway",
+    model: "bge-multilingual-gemma2",
+    apiKey: process.env.SCALEWAY_API_KEY!,
+  },  
 ];
 
 const RERANK_TESTS: LlmApiConfig[] = [

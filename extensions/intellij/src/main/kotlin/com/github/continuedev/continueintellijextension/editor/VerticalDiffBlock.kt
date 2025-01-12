@@ -3,6 +3,7 @@ package com.github.continuedev.continueintellijextension.editor
 import com.github.continuedev.continueintellijextension.utils.getAltKeyLabel
 import com.github.continuedev.continueintellijextension.utils.getShiftKeyLabel
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.invokeLater
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.LogicalPosition
@@ -11,6 +12,7 @@ import com.intellij.openapi.editor.markup.HighlighterLayer
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.ui.JBColor
+import com.intellij.util.application
 import java.awt.*
 import javax.swing.BorderFactory
 import javax.swing.JButton
@@ -29,6 +31,7 @@ class VerticalDiffBlock(
     private val rejectButton: JButton
     private var deletionInlay: Disposable? = null
     private var textArea: JTextArea? = null // Used for calculation of the text area height when rendering buttons
+    private var hasRenderedDiffBlock: Boolean = false
     private val editorComponentInlaysManager = EditorComponentInlaysManager.from(editor, false)
     private val greenKey = createTextAttributesKey("CONTINUE_DIFF_NEW_LINE", 0x3000FF00, editor)
 
@@ -40,7 +43,14 @@ class VerticalDiffBlock(
     }
 
     fun clearEditorUI() {
-        deletionInlay?.dispose()
+        deletionInlay?.let {
+            // Ensure that dispose is executed on EDT
+            if (application.isDispatchThread) {
+                it.dispose()
+            } else {
+                invokeLater { it.dispose() }
+            }
+        }
         removeGreenHighlighters()
         removeButtons()
     }
@@ -58,11 +68,12 @@ class VerticalDiffBlock(
 
     fun deleteLineAt(line: Int) {
         val startOffset = editor.document.getLineStartOffset(line)
-        val endOffset = editor.document.getLineEndOffset(line) + 1
+        val endOffset = min(editor.document.getLineEndOffset(line) + 1, editor.document.textLength)
         val deletedText = editor.document.getText(TextRange(startOffset, endOffset))
 
         deletedLines.add(deletedText.trimEnd())
 
+        // Unable to ensure that text length has not changed, so we need to get it again
         editor.document.deleteString(startOffset, min(endOffset, editor.document.textLength))
     }
 
@@ -81,11 +92,19 @@ class VerticalDiffBlock(
     }
 
     fun onLastDiffLine() {
+        // Handles the case where we are invoking one last time on last line of diff stream, but the block has
+        // already been rendered
+        if (hasRenderedDiffBlock) {
+            return
+        }
+
         if (deletedLines.size > 0) {
             renderDeletedLinesInlay()
         }
 
         renderButtons()
+
+        hasRenderedDiffBlock = true
     }
 
     fun handleReject() {

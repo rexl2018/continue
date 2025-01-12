@@ -5,9 +5,11 @@ import {
   LLMOptions,
   ModelDescription,
 } from "../..";
-import { renderTemplatedString } from "../../promptFiles/renderTemplatedString";
+import { renderTemplatedString } from "../../promptFiles/v1/renderTemplatedString";
 import { BaseLLM } from "../index";
+
 import Anthropic from "./Anthropic";
+import Asksage from "./Asksage";
 import Azure from "./Azure";
 import Bedrock from "./Bedrock";
 import BedrockImport from "./BedrockImport";
@@ -19,16 +21,18 @@ import Deepseek from "./Deepseek";
 import Fireworks from "./Fireworks";
 import Flowise from "./Flowise";
 import FreeTrial from "./FreeTrial";
+import FunctionNetwork from "./FunctionNetwork";
 import Gemini from "./Gemini";
 import Groq from "./Groq";
 import HuggingFaceInferenceAPI from "./HuggingFaceInferenceAPI";
 import HuggingFaceTGI from "./HuggingFaceTGI";
 import Kindo from "./Kindo";
-import LMStudio from "./LMStudio";
 import LlamaCpp from "./LlamaCpp";
 import Llamafile from "./Llamafile";
+import LMStudio from "./LMStudio";
 import Mistral from "./Mistral";
-import Mock from "./Mock";
+import MockLLM from "./Mock";
+import Moonshot from "./Moonshot";
 import Msty from "./Msty";
 import Nebius from "./Nebius";
 import Nvidia from "./Nvidia";
@@ -38,24 +42,31 @@ import OpenRouter from "./OpenRouter";
 import Replicate from "./Replicate";
 import SageMaker from "./SageMaker";
 import SambaNova from "./SambaNova";
+import Scaleway from "./Scaleway";
+import SiliconFlow from "./SiliconFlow";
+import ContinueProxy from "./stubs/ContinueProxy";
+import TestLLM from "./Test";
 import TextGenWebUI from "./TextGenWebUI";
 import Together from "./Together";
+import Novita from "./Novita";
+import VertexAI from "./VertexAI";
 import Vllm from "./Vllm";
 import WatsonX from "./WatsonX";
-import ContinueProxy from "./stubs/ContinueProxy";
-import VertexAI from "./VertexAI";
-import Asksage from "./Asksage";
+import xAI from "./xAI";
 
-const LLMs = [
+export const LLMClasses = [
   Anthropic,
   Cohere,
   FreeTrial,
+  FunctionNetwork,
   Gemini,
   Llamafile,
+  Moonshot,
   Ollama,
   Replicate,
   TextGenWebUI,
   Together,
+  Novita,
   HuggingFaceTGI,
   HuggingFaceInferenceAPI,
   Kindo,
@@ -80,11 +91,15 @@ const LLMs = [
   Nvidia,
   Vllm,
   SambaNova,
-  Mock,
+  MockLLM,
+  TestLLM,
   Cerebras,
   Asksage,
   Nebius,
-  VertexAI
+  VertexAI,
+  xAI,
+  SiliconFlow,
+  Scaleway,
 ];
 
 export async function llmFromDescription(
@@ -96,7 +111,7 @@ export async function llmFromDescription(
   completionOptions?: BaseCompletionOptions,
   systemMessage?: string,
 ): Promise<BaseLLM | undefined> {
-  const cls = LLMs.find((llm) => llm.providerName === desc.provider);
+  const cls = LLMClasses.find((llm) => llm.providerName === desc.provider);
 
   if (!cls) {
     return undefined;
@@ -143,7 +158,7 @@ export function llmFromProviderAndOptions(
   providerName: string,
   llmOptions: LLMOptions,
 ): ILLM {
-  const cls = LLMs.find((llm) => llm.providerName === providerName);
+  const cls = LLMClasses.find((llm) => llm.providerName === providerName);
 
   if (!cls) {
     throw new Error(`Unknown LLM provider type "${providerName}"`);

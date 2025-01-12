@@ -1,8 +1,10 @@
-import * as JSONC from "comment-json";
-import dotenv from "dotenv";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+
+import * as JSONC from "comment-json";
+import dotenv from "dotenv";
+
 import { IdeType, SerializedContinueConfig } from "../";
 import { defaultConfig, defaultConfigJetBrains } from "../config/default";
 import Types from "../config/types";
@@ -11,6 +13,10 @@ dotenv.config();
 
 const CONTINUE_GLOBAL_DIR =
   process.env.CONTINUE_GLOBAL_DIR ?? path.join(os.homedir(), ".continue");
+
+// export const DEFAULT_CONFIG_TS_CONTENTS = `import { Config } from "./types"\n\nexport function modifyConfig(config: Config): Config {
+//   return config;
+// }`;
 
 export const DEFAULT_CONFIG_TS_CONTENTS = `export function modifyConfig(config: Config): Config {
   return config;
@@ -26,6 +32,17 @@ export function getContinueUtilsPath(): string {
     fs.mkdirSync(utilsPath);
   }
   return utilsPath;
+}
+
+export function getGlobalContinueIgnorePath(): string {
+  const continueIgnorePath = path.join(
+    getContinueGlobalPath(),
+    ".continueignore",
+  );
+  if (!fs.existsSync(continueIgnorePath)) {
+    fs.writeFileSync(continueIgnorePath, "");
+  }
+  return continueIgnorePath;
 }
 
 export function getContinueGlobalPath(): string {
@@ -78,6 +95,18 @@ export function getConfigJsonPath(ideType: IdeType = "vscode"): string {
       fs.writeFileSync(p, JSON.stringify(defaultConfig, null, 2));
     }
   }
+  return p;
+}
+
+export function getConfigYamlPath(ideType: IdeType): string {
+  const p = path.join(getContinueGlobalPath(), "config.yaml");
+  // if (!fs.existsSync(p)) {
+  //   if (ideType === "jetbrains") {
+  //     fs.writeFileSync(p, YAML.stringify(defaultConfigYamlJetBrains));
+  //   } else {
+  //     fs.writeFileSync(p, YAML.stringify(defaultConfigYaml));
+  //   }
+  // }
   return p;
 }
 
@@ -314,7 +343,7 @@ export function getPromptLogsPath(): string {
 }
 
 export function getGlobalPromptsPath(): string {
-  return path.join(getContinueGlobalPath(), ".prompts");
+  return path.join(getContinueGlobalPath(), "prompts");
 }
 
 export function readAllGlobalPromptFiles(
@@ -362,4 +391,14 @@ export function setupInitialDotContinueDirectory() {
       fs.writeFileSync(devDataPath, "");
     }
   });
+}
+
+export function getDiffsDirectoryPath(): string {
+  const diffsPath = path.join(getContinueGlobalPath(), ".diffs"); // .replace(/^C:/, "c:"); ??
+  if (!fs.existsSync(diffsPath)) {
+    fs.mkdirSync(diffsPath, {
+      recursive: true,
+    });
+  }
+  return diffsPath;
 }

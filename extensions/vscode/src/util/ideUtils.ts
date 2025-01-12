@@ -1,24 +1,21 @@
-import type { FileEdit, RangeInFile, Thread } from "core";
-import path from "node:path";
+import { EXTENSION_NAME } from "core/control-plane/env";
+import _ from "lodash";
 import * as vscode from "vscode";
+import * as URI from "uri-js";
 import { threadStopped } from "../debug/debug";
 import { VsCodeExtension } from "../extension/VsCodeExtension";
 import { GitExtension, Repository } from "../otherExtensions/git";
 import {
   SuggestionRanges,
   acceptSuggestionCommand,
-  editorSuggestionsLocked,
   rejectSuggestionCommand,
   showSuggestion as showSuggestionInEditor,
 } from "../suggestions";
-import {
-  getUniqueId,
-  openEditorAndRevealRange,
-  uriFromFilePath,
-} from "./vscode";
 
-import { EXTENSION_NAME } from "core/control-plane/env";
-import _ from "lodash";
+import { getUniqueId, openEditorAndRevealRange } from "./vscode";
+
+import type { Range, RangeInFile, Thread } from "core";
+import { findUriInDirs } from "core/util/uri";
 
 const util = require("node:util");
 const asyncExec = util.promisify(require("node:child_process").exec);
@@ -29,48 +26,47 @@ export class VsCodeIdeUtils {
   visibleMessages: Set<string> = new Set();
 
   async gotoDefinition(
-    filepath: string,
+    uri: vscode.Uri,
     position: vscode.Position,
   ): Promise<vscode.Location[]> {
     const locations: vscode.Location[] = await vscode.commands.executeCommand(
       "vscode.executeDefinitionProvider",
-      uriFromFilePath(filepath),
+      uri,
       position,
     );
     return locations;
   }
 
-  async documentSymbol(filepath: string): Promise<vscode.DocumentSymbol[]> {
+  async documentSymbol(uri: vscode.Uri): Promise<vscode.DocumentSymbol[]> {
     return await vscode.commands.executeCommand(
       "vscode.executeDocumentSymbolProvider",
-      uriFromFilePath(filepath),
+      uri,
     );
   }
 
   async references(
-    filepath: string,
+    uri: vscode.Uri,
     position: vscode.Position,
   ): Promise<vscode.Location[]> {
     return await vscode.commands.executeCommand(
       "vscode.executeReferenceProvider",
-      uriFromFilePath(filepath),
+      uri,
       position,
     );
   }
 
-  async foldingRanges(filepath: string): Promise<vscode.FoldingRange[]> {
+  async foldingRanges(uri: vscode.Uri): Promise<vscode.FoldingRange[]> {
     return await vscode.commands.executeCommand(
       "vscode.executeFoldingRangeProvider",
-      uriFromFilePath(filepath),
+      uri,
     );
   }
 
-  private _workspaceDirectories: string[] | undefined = undefined;
-  getWorkspaceDirectories(): string[] {
+  private _workspaceDirectories: vscode.Uri[] | undefined = undefined;
+  getWorkspaceDirectories(): vscode.Uri[] {
     if (this._workspaceDirectories === undefined) {
       this._workspaceDirectories =
-        vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ||
-        [];
+        vscode.workspace.workspaceFolders?.map((folder) => folder.uri) || [];
     }
 
     return this._workspaceDirectories;
@@ -80,97 +76,32 @@ export class VsCodeIdeUtils {
     return getUniqueId();
   }
 
-  // ------------------------------------ //
-  // On message handlers
-
-  private _lastDecorationType: vscode.TextEditorDecorationType | null = null;
-  async highlightCode(rangeInFile: RangeInFile, color: string) {
-    const range = new vscode.Range(
-      rangeInFile.range.start.line,
-      rangeInFile.range.start.character,
-      rangeInFile.range.end.line,
-      rangeInFile.range.end.character,
-    );
-    const editor = await openEditorAndRevealRange(
-      rangeInFile.filepath,
-      range,
-      vscode.ViewColumn.One,
-    );
-    if (editor) {
-      const decorationType = vscode.window.createTextEditorDecorationType({
-        backgroundColor: color,
-        isWholeLine: true,
-      });
-      editor.setDecorations(decorationType, [range]);
-
-      const cursorDisposable = vscode.window.onDidChangeTextEditorSelection(
-        (event) => {
-          if (event.textEditor.document.uri.fsPath === rangeInFile.filepath) {
-            cursorDisposable.dispose();
-            editor.setDecorations(decorationType, []);
-          }
-        },
-      );
-
-      setTimeout(() => {
-        cursorDisposable.dispose();
-        editor.setDecorations(decorationType, []);
-      }, 2500);
-
-      if (this._lastDecorationType) {
-        editor.setDecorations(this._lastDecorationType, []);
-      }
-      this._lastDecorationType = decorationType;
-    }
-  }
-
-  showSuggestion(edit: FileEdit) {
-    // showSuggestion already exists
+  showSuggestion(uri: vscode.Uri, range: Range, suggestion: string) {
     showSuggestionInEditor(
-      edit.filepath,
+      uri,
       new vscode.Range(
-        edit.range.start.line,
-        edit.range.start.character,
-        edit.range.end.line,
-        edit.range.end.character,
+        range.start.line,
+        range.start.character,
+        range.end.line,
+        range.end.character,
       ),
-      edit.replacement,
+      suggestion,
     );
   }
 
-  private async resolveAbsFilepathInWorkspace(
-    filepath: string,
-  ): Promise<string> {
-    // If the filepath is already absolute, return it as is
-    if (this.path.isAbsolute(filepath)) {
-      return filepath;
-    }
-
-    // Try to resolve for each workspace directory
-    const workspaceDirectories = this.getWorkspaceDirectories();
-    for (const dir of workspaceDirectories) {
-      const resolvedPath = this.path.resolve(dir, filepath);
-      if (await this.fileExists(resolvedPath)) {
-        return resolvedPath;
-      }
-    }
-
-    return filepath;
-  }
-
-  async openFile(filepath: string, range?: vscode.Range) {
+  async openFile(uri: vscode.Uri, range?: vscode.Range) {
     // vscode has a builtin open/get open files
-    return openEditorAndRevealRange(
-      await this.resolveAbsFilepathInWorkspace(filepath),
+    return await openEditorAndRevealRange(
+      uri,
       range,
       vscode.ViewColumn.One,
       false,
     );
   }
 
-  async fileExists(filepath: string): Promise<boolean> {
+  async fileExists(uri: vscode.Uri): Promise<boolean> {
     try {
-      await vscode.workspace.fs.stat(uriFromFilePath(filepath));
+      await vscode.workspace.fs.stat(uri);
       return true;
     } catch {
       return false;
@@ -189,11 +120,6 @@ export class VsCodeIdeUtils {
       .then((doc) => {
         vscode.window.showTextDocument(doc, { preview: false });
       });
-  }
-
-  setSuggestionsLocked(filepath: string, locked: boolean) {
-    editorSuggestionsLocked.set(filepath, locked);
-    // TODO: Rerender?
   }
 
   async getUserSecret(key: string) {
@@ -238,7 +164,7 @@ export class VsCodeIdeUtils {
     return uri.scheme === "file" || uri.scheme === "vscode-remote";
   }
 
-  getOpenFiles(): string[] {
+  getOpenFiles(): vscode.Uri[] {
     return vscode.window.tabGroups.all
       .map((group) => {
         return group.tabs.map((tab) => {
@@ -247,110 +173,22 @@ export class VsCodeIdeUtils {
       })
       .flat()
       .filter(Boolean) // filter out undefined values
-      .filter((uri) => this.documentIsCode(uri)) // Filter out undesired documents
-      .map((uri) => uri.fsPath);
+      .filter((uri) => this.documentIsCode(uri)); // Filter out undesired documents
   }
 
-  getVisibleFiles(): string[] {
-    return vscode.window.visibleTextEditors
-      .filter((editor) => this.documentIsCode(editor.document.uri))
-      .map((editor) => {
-        return editor.document.uri.fsPath;
-      });
-  }
-
-  saveFile(filepath: string) {
+  saveFile(uri: vscode.Uri) {
     vscode.window.visibleTextEditors
       .filter((editor) => this.documentIsCode(editor.document.uri))
       .forEach((editor) => {
-        if (editor.document.uri.fsPath === filepath) {
+        if (URI.equal(editor.document.uri.toString(), uri.toString())) {
           editor.document.save();
         }
       });
   }
 
-  private _cachedPath: path.PlatformPath | undefined;
-  get path(): path.PlatformPath {
-    if (this._cachedPath) {
-      return this._cachedPath;
-    }
-
-    // Return "path" module for either windows or posix depending on sample workspace folder path format
-    const sampleWorkspaceFolder =
-      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const isWindows = sampleWorkspaceFolder
-      ? !sampleWorkspaceFolder.startsWith("/")
-      : false;
-
-    this._cachedPath = isWindows ? path.win32 : path.posix;
-    return this._cachedPath;
-  }
-
-  getAbsolutePath(filepath: string): string {
-    const workspaceDirectories = this.getWorkspaceDirectories();
-    if (!this.path.isAbsolute(filepath) && workspaceDirectories.length === 1) {
-      return this.path.join(workspaceDirectories[0], filepath);
-    } else {
-      return filepath;
-    }
-  }
-
-  private static MAX_BYTES = 100000;
-
-  async readFile(filepath: string): Promise<string> {
-    try {
-      filepath = this.getAbsolutePath(filepath);
-      const uri = uriFromFilePath(filepath);
-
-      // First, check whether it's a notebook document
-      // Need to iterate over the cells to get full contents
-      const notebook =
-        vscode.workspace.notebookDocuments.find(
-          (doc) => doc.uri.toString() === uri.toString(),
-        ) ??
-        (uri.fsPath.endsWith("ipynb")
-          ? await vscode.workspace.openNotebookDocument(uri)
-          : undefined);
-      if (notebook) {
-        return notebook
-          .getCells()
-          .map((cell) => cell.document.getText())
-          .join("\n\n");
-      }
-
-      // Check whether it's an open document
-      const openTextDocument = vscode.workspace.textDocuments.find(
-        (doc) => doc.uri.fsPath === uri.fsPath,
-      );
-      if (openTextDocument !== undefined) {
-        return openTextDocument.getText();
-      }
-
-      const fileStats = await vscode.workspace.fs.stat(
-        uriFromFilePath(filepath),
-      );
-      if (fileStats.size > 10 * VsCodeIdeUtils.MAX_BYTES) {
-        return "";
-      }
-
-      const bytes = await vscode.workspace.fs.readFile(uri);
-
-      // Truncate the buffer to the first MAX_BYTES
-      const truncatedBytes = bytes.slice(0, VsCodeIdeUtils.MAX_BYTES);
-      const contents = new TextDecoder().decode(truncatedBytes);
-      return contents;
-    } catch (e) {
-      console.warn("Error reading file", e);
-      return "";
-    }
-  }
-
-  async readRangeInFile(
-    filepath: string,
-    range: vscode.Range,
-  ): Promise<string> {
+  async readRangeInFile(uri: vscode.Uri, range: vscode.Range): Promise<string> {
     const contents = new TextDecoder().decode(
-      await vscode.workspace.fs.readFile(vscode.Uri.file(filepath)),
+      await vscode.workspace.fs.readFile(uri),
     );
     const lines = contents.split("\n");
     return `${lines
@@ -563,13 +401,16 @@ export class VsCodeIdeUtils {
   private static secondsToWaitForGitToLoad =
     process.env.NODE_ENV === "test" ? 1 : 20;
   async getRepo(forDirectory: vscode.Uri): Promise<Repository | undefined> {
-    const workspaceDirs = this.getWorkspaceDirectories();
-    const parentDir = workspaceDirs.find((dir) =>
-      forDirectory.fsPath.startsWith(dir),
+    const workspaceDirs = this.getWorkspaceDirectories().map((dir) =>
+      dir.toString(),
     );
-    if (parentDir) {
+    const { foundInDir } = findUriInDirs(
+      forDirectory.toString(),
+      workspaceDirs,
+    );
+    if (foundInDir) {
       // Check if the repository is already cached
-      const cachedRepo = this.repoCache.get(parentDir);
+      const cachedRepo = this.repoCache.get(foundInDir);
       if (cachedRepo) {
         return cachedRepo;
       }
@@ -592,17 +433,17 @@ export class VsCodeIdeUtils {
       repo = await this._getRepo(forDirectory);
     }
 
-    if (parentDir) {
+    if (foundInDir) {
       // Cache the repository for the parent directory
-      this.repoCache.set(parentDir, repo);
+      this.repoCache.set(foundInDir, repo);
     }
 
     return repo;
   }
 
-  async getGitRoot(forDirectory: string): Promise<string | undefined> {
-    const repo = await this.getRepo(vscode.Uri.file(forDirectory));
-    return repo?.rootUri?.fsPath;
+  async getGitRoot(forDirectory: vscode.Uri): Promise<vscode.Uri | undefined> {
+    const repo = await this.getRepo(forDirectory);
+    return repo?.rootUri;
   }
 
   async getBranch(forDirectory: vscode.Uri) {
@@ -621,23 +462,32 @@ export class VsCodeIdeUtils {
     return repo?.state?.HEAD?.name || "NONE";
   }
 
-  async getDiff(includeUnstaged: boolean): Promise<string> {
-    let diffs: string[] = [];
-    let repos = [];
+  private splitDiff(diffString: string): string[] {
+    const fileDiffHeaderRegex = /(?=diff --git a\/.* b\/.*)/;
+
+    const diffs = diffString.split(fileDiffHeaderRegex);
+
+    if (diffs[0].trim() === "") {
+      diffs.shift();
+    }
+
+    return diffs;
+  }
+
+  async getDiff(includeUnstaged: boolean): Promise<string[]> {
+    const diffs: string[] = [];
 
     for (const dir of this.getWorkspaceDirectories()) {
-      const repo = await this.getRepo(vscode.Uri.file(dir));
+      const repo = await this.getRepo(dir);
       if (!repo) {
         continue;
       }
 
-      repos.push(repo.state.HEAD?.name);
-
       const staged = await repo.diff(true);
-      diffs.push(`${staged}`);
+      diffs.push(staged);
       if (includeUnstaged) {
         const unstaged = await repo.diff(false);
-        diffs.push(`\n${unstaged}`);
+        diffs.push(unstaged);
       }
     }
 

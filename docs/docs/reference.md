@@ -1,5 +1,5 @@
 ---
-title: Reference
+title: config.json Reference
 description: Reference for the Continue _config.json_ configuration file
 keywords: [config, config_schema.json, json]
 ---
@@ -17,7 +17,7 @@ Each model has specific configuration options tailored to its provider and funct
 
 - `title` (**required**): The title to assign to your model, shown in dropdowns, etc.
 - `provider` (**required**): The provider of the model, which determines the type and interaction method. Options inclued `openai`, `ollama`, etc., see intelliJ suggestions.
-- `model` (**required**): The name of the model, used for prompt template auto-detection.
+- `model` (**required**): The name of the model, used for prompt template auto-detection. Use `AUTODETECT` special name to get all available models.
 - `apiKey`: API key required by providers like OpenAI, Anthropic, and Cohere.
 - `apiBase`: The base URL of the LLM API.
 - `contextLength`: Maximum context length of the model, typically in tokens (default: 2048).
@@ -83,17 +83,15 @@ Specifies options for tab autocompletion behavior.
 **Properties:**
 
 - `disable`: If `true`, disables tab autocomplete (default: `false`).
-- `useCopyBuffer`: If `true`, includes the copy buffer in the prompt.
 - `useFileSuffix`: If `true`, includes file suffix in the prompt.
 - `maxPromptTokens`: Maximum number of tokens for the prompt.
 - `debounceDelay`: Delay (in ms) before triggering autocomplete.
 - `maxSuffixPercentage`: Maximum percentage of prompt for suffix.
 - `prefixPercentage`: Percentage of input for prefix.
-- `template`: Template string for autocomplete, using Mustache templating.
+- `template`: Template string for autocomplete, using Mustache templating. You can use the `{{{ prefix }}}`, `{{{ suffix }}}`, `{{{ filename }}}`, `{{{ reponame }}}`, and `{{{ language }}}` variables.
 - `multilineCompletions`: Controls multiline completions (`"always"`, `"never"`, or `"auto"`).
 - `useCache`: If `true`, caches completions.
 - `onlyMyCode`: If `true`, only includes code within the repository.
-- `useOtherFiles`: If `true`, includes snippets from other files (default: `true`).
 - `disableInFiles`: Array of glob patterns for files where autocomplete is disabled.
 
 Example
@@ -158,6 +156,7 @@ Parameters that control the behavior of text generation and completion settings.
 - `maxTokens`: The maximum number of tokens to generate in a completion (default: `2048`).
 - `numThreads`: The number of threads used during the generation process. Available only for Ollama as `num_thread`.
 - `keepAlive`: For Ollama, this parameter sets the number of seconds to keep the model loaded after the last request, unloading it from memory if inactive (default: `1800` seconds, or 30 minutes).
+- `useMmap`: For Ollama, this parameter allows the model to be mapped into memory. If disabled can enhance response time on low end devices but will slow down the stream.
 
 Example
 
@@ -207,10 +206,11 @@ Configuration for the reranker model used in response ranking.
 
 **Properties:**
 
-- `name` (**required**): Reranker name, e.g., `cohere`, `voyage`, `llm`, `free-trial`, `huggingface-tei`
+- `name` (**required**): Reranker name, e.g., `cohere`, `voyage`, `llm`, `free-trial`, `huggingface-tei`, `bedrock`
 - `params`:
   - `model`: Model name
   - `apiKey`: Api key
+  - `region`: Region (for Bedrock only)
 
 Example
 
@@ -267,7 +267,7 @@ Custom commands initiated by typing "/" in the sidebar. Commands include predefi
 
 **Properties:**
 
-- `name`: The command name. Options include "issue", "share", "cmd", "edit", "comment", "http", "commit", and "review".
+- `name`: The command name. Options include "issue", "share", "cmd", "http", "commit", and "review".
 - `description`: Brief description of the command.
 - `step`: (Deprecated) Used for built-in commands; set the name for pre-configured options.
 - `params`: Additional parameters to configure command behavior (command-specific - see code for command)
@@ -280,10 +280,6 @@ Example:
     {
       "name": "commit",
       "description": "Generate a commit message"
-    },
-    {
-      "name": "comment",
-      "description": "Write comments for the selected code"
     },
     {
       "name": "share",
@@ -369,6 +365,7 @@ Customizable UI settings to control interface appearance and behavior.
 - `fontSize`: Specifies font size for UI elements.
 - `displayRawMarkdown`: If `true`, shows raw markdown in responses.
 - `showChatScrollbar`: If `true`, enables a scrollbar in the chat window.
+- `codeWrap`: If `true`, enables text wrapping in code blocks.
 
 Example:
 
@@ -377,7 +374,9 @@ Example:
   "ui": {
     "codeBlockToolbarPosition": "bottom",
     "fontSize": 14,
-    "displayRawMarkdown": false
+    "displayRawMarkdown": false,
+    "showChatScrollbar": false,
+    "codeWrap": false
   }
 }
 ```
@@ -420,8 +419,7 @@ Several experimental config parameters are available, as described below:
   - `docstring`: Prompt for adding docstrings.
   - `fix`: Prompt for fixing code.
   - `optimize`: Prompt for optimizing code.
-  - `fixGrammar`: Prompt for fixing grammar or spelling.
-- `useChromiumForDocsCrawling`: Use chromium to crawl docs instead of default lighter-weight tool that can't render sites. Downloads and installs Chromium to `~/.continue/.utils`.
+- `useChromiumForDocsCrawling`: Use Chromium to crawl docs locally. Useful if the default Cheerio crawler fails on sites that require JavaScript rendering. Downloads and installs Chromium to `~/.continue/.utils`..
 
 Example
 

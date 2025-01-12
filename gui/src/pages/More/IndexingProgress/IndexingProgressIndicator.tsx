@@ -17,13 +17,15 @@ const STATUS_TO_ICON: Record<IndexingProgressUpdate["status"], any> = {
   paused: PauseCircleIcon,
   done: CheckCircleIcon,
   failed: null, // Since we show an erorr message below
+  cancelled: null,
 };
 
 function IndexingProgressIndicator({ update }: IndexingProgressIndicatorProps) {
-  const progressPercentage = getProgressPercentage(update.progress);
+  const progressPercentage = getProgressPercentage(update.progress).toFixed(0);
   const Icon = STATUS_TO_ICON[update.status];
   const animateIcon = update.status === "indexing";
-  const showProgress = update.status !== "disabled";
+  const showProgress =
+    update.status !== "disabled" && progressPercentage !== "100";
 
   return (
     <div className="flex items-center justify-between gap-1 text-stone-500">
@@ -32,7 +34,7 @@ function IndexingProgressIndicator({ update }: IndexingProgressIndicatorProps) {
       {Icon && (
         <div className="flex items-center">
           <Icon
-            className={`h-4 w-4 inline-block align-top text-stone-500 ${
+            className={`inline-block h-4 w-4 align-top text-stone-500 ${
               animateIcon ? "animate-spin-slow" : ""
             }`}
           ></Icon>

@@ -4,14 +4,14 @@ import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import { table } from "table";
 import { lightGray, vscBackground, vscInputBackground } from "../components";
-import { CopyButton } from "../components/markdown/CopyButton";
+import { CopyIconButton } from "../components/gui/CopyIconButton";
 import { IdeMessengerContext } from "../context/IdeMessenger";
 import { useNavigationListener } from "../hooks/useNavigationListener";
 
 const Th = styled.th`
   padding: 0.5rem;
   text-align: left;
-  border: 1px solid ${vscInputBackground};
+  border: 1px solid ${lightGray};
 `;
 
 const Tr = styled.tr`
@@ -21,12 +21,12 @@ const Tr = styled.tr`
 
   overflow-wrap: anywhere;
 
-  border: 1px solid ${vscInputBackground};
+  border: 1px solid ${lightGray};
 `;
 
 const Td = styled.td`
   padding: 0.5rem;
-  border: 1px solid ${vscInputBackground};
+  border: 1px solid ${lightGray};
 `;
 
 function generateTable(data: unknown[][]) {
@@ -80,7 +80,7 @@ function Stats() {
       <div className="p-2">
         <div className="flex items-center gap-2">
           <h2 className="ml-2">Tokens per Day</h2>
-          <CopyButton
+          <CopyIconButton
             text={generateTable(
               ([["Day", "Generated Tokens", "Prompt Tokens"]] as any).concat(
                 days.map((day) => [
@@ -113,7 +113,7 @@ function Stats() {
 
         <div className="flex items-center gap-2">
           <h2 className="ml-2">Tokens per Model</h2>
-          <CopyButton
+          <CopyIconButton
             text={generateTable(
               ([["Model", "Generated Tokens", "Prompt Tokens"]] as any).concat(
                 models.map((model) => [

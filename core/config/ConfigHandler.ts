@@ -12,6 +12,8 @@ import {
 } from "../index.js";
 import Ollama from "../llm/llms/Ollama.js";
 import { GlobalContext } from "../util/GlobalContext.js";
+import { getConfigJsonPath } from "../util/paths.js";
+
 import { ConfigResult } from "./load.js";
 import {
   LOCAL_ONBOARDING_CHAT_MODEL,
@@ -19,11 +21,11 @@ import {
 } from "./onboarding.js";
 import ControlPlaneProfileLoader from "./profile/ControlPlaneProfileLoader.js";
 import LocalProfileLoader from "./profile/LocalProfileLoader.js";
-
 import {
   ProfileDescription,
   ProfileLifecycleManager,
 } from "./ProfileLifecycleManager.js";
+import { pathToFileURL } from "url";
 
 export type { ProfileDescription };
 
@@ -59,13 +61,13 @@ export class ConfigHandler {
 
     // Always load local profile immediately in case control plane doesn't load
     try {
-      this.loadConfig();
+      void this.loadConfig();
     } catch (e) {
       console.error("Failed to load config: ", e);
     }
 
     // Load control plane profiles
-    this.fetchControlPlaneProfiles();
+    void this.fetchControlPlaneProfiles();
   }
 
   // This will be the local profile
@@ -82,6 +84,18 @@ export class ConfigHandler {
 
   get inactiveProfiles() {
     return this.profiles.filter((p) => p.profileId !== this.selectedProfileId);
+  }
+
+  async openConfigProfile(profileId?: string) {
+    let openProfileId = profileId || this.selectedProfileId;
+    if (openProfileId === "local") {
+      await this.ide.openFile(pathToFileURL(getConfigJsonPath()).toString());
+    } else {
+      await this.ide.openUrl(
+        "https://app.continue.dev/",
+        // `https://app.continue.dev/workspaces/${openProfileId}/chat`,
+      );
+    }
   }
 
   private async fetchControlPlaneProfiles() {
@@ -133,12 +147,8 @@ export class ConfigHandler {
 
   async setSelectedProfile(profileId: string) {
     this.selectedProfileId = profileId;
-    const newConfig = await this.loadConfig();
-    this.notifyConfigListeners({
-      config: newConfig,
-      errors: undefined,
-      configLoadInterrupted: false,
-    });
+    const result = await this.loadConfig();
+    this.notifyConfigListeners(result);
     const selectedProfiles =
       this.globalContext.get("lastSelectedProfileForWorkspace") ?? {};
     selectedProfiles[await this.getWorkspaceId()] = profileId;
@@ -157,7 +167,7 @@ export class ConfigHandler {
   // Automatically refresh config when Continue-related IDE (e.g. VS Code) settings are changed
   updateIdeSettings(ideSettings: IdeSettings) {
     this.ideSettingsPromise = Promise.resolve(ideSettings);
-    this.reloadConfig();
+    void this.reloadConfig();
   }
 
   updateControlPlaneSessionInfo(
@@ -211,7 +221,9 @@ export class ConfigHandler {
     return { config, errors };
   }
 
-  getSerializedConfig(): Promise<BrowserSerializedContinueConfig> {
+  getSerializedConfig(): Promise<
+    ConfigResult<BrowserSerializedContinueConfig>
+  > {
     return this.currentProfile.getSerializedConfig(
       this.additionalContextProviders,
     );
@@ -221,13 +233,15 @@ export class ConfigHandler {
     return this.profiles.map((p) => p.profileDescription);
   }
 
-  async loadConfig(): Promise<ContinueConfig> {
-    return this.currentProfile.loadConfig(this.additionalContextProviders);
+  async loadConfig(): Promise<ConfigResult<ContinueConfig>> {
+    return await this.currentProfile.loadConfig(
+      this.additionalContextProviders,
+    );
   }
 
   async llmFromTitle(title?: string): Promise<ILLM> {
-    const config = await this.loadConfig();
-    const model = config.models.find((m) => m.title === title);
+    const { config } = await this.loadConfig();
+    const model = config?.models.find((m) => m.title === title);
     if (!model) {
       if (title === ONBOARDING_LOCAL_MODEL_TITLE) {
         // Special case, make calls to Ollama before we have it in the config
@@ -235,8 +249,8 @@ export class ConfigHandler {
           model: LOCAL_ONBOARDING_CHAT_MODEL,
         });
         return ollama;
-      } else if (config.models.length > 0) {
-        return config.models[0];
+      } else if (config?.models?.length) {
+        return config?.models[0];
       }
 
       throw new Error("No model found");
@@ -247,6 +261,6 @@ export class ConfigHandler {
 
   registerCustomContextProvider(contextProvider: IContextProvider) {
     this.additionalContextProviders.push(contextProvider);
-    this.reloadConfig();
+    void this.reloadConfig();
   }
 }

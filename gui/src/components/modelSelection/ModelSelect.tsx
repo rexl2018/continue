@@ -6,7 +6,7 @@ import {
   PlusIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
-import { useContext, useEffect, useRef, useState } from "react";
+import { MouseEvent, useContext, useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import styled from "styled-components";
 import {
@@ -16,20 +16,19 @@ import {
   vscInputBackground,
 } from "..";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
-import { defaultModelSelector } from "../../redux/selectors/modelSelectors";
-import { setDefaultModel } from "../../redux/slices/stateSlice";
-import {
-  setDialogMessage,
-  setShowDialog,
-} from "../../redux/slices/uiStateSlice";
-import { RootState } from "../../redux/store";
+import AddModelForm from "../../forms/AddModelForm";
+import { setDialogMessage, setShowDialog } from "../../redux/slices/uiSlice";
 import {
   getFontSize,
   getMetaKeyLabel,
   isMetaEquivalentKeyPressed,
 } from "../../util";
 import ConfirmationDialog from "../dialogs/ConfirmationDialog";
-import AddModelForm from "../../forms/AddModelForm";
+import { useAppSelector } from "../../redux/hooks";
+import {
+  selectDefaultModel,
+  setDefaultModel,
+} from "../../redux/slices/configSlice";
 
 interface ModelOptionProps {
   option: Option;
@@ -41,7 +40,7 @@ interface ModelOptionProps {
 interface Option {
   value: string;
   title: string;
-  apiKey: string;
+  apiKey?: string;
 }
 
 const MAX_HEIGHT_PX = 300;
@@ -105,14 +104,14 @@ const StyledListboxOption = styled(Listbox.Option)<{ isDisabled?: boolean }>`
   `}
 `;
 
-const IconBase = styled.div<{ hovered: boolean }>`
+const IconBase = styled.div<{ $hovered: boolean }>`
   width: 1.2em;
   height: 1.2em;
   cursor: pointer;
   padding: 4px;
   border-radius: ${defaultBorderRadius};
-  opacity: ${(props) => (props.hovered ? 0.75 : 0)};
-  visibility: ${(props) => (props.hovered ? "visible" : "hidden")};
+  opacity: ${(props) => (props.$hovered ? 0.75 : 0)};
+  visibility: ${(props) => (props.$hovered ? "visible" : "hidden")};
 
   &:hover {
     opacity: 1;
@@ -145,7 +144,7 @@ function ModelOption({
   const dispatch = useDispatch();
   const [hovered, setHovered] = useState(false);
 
-  function onClickDelete(e) {
+  function onClickDelete(e: MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
 
@@ -165,14 +164,16 @@ function ModelOption({
     );
   }
 
-  function onClickGear(e) {
+  function onClickGear(e: MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
 
-    ideMessenger.post("openConfigJson", undefined);
+    ideMessenger.post("config/openProfile", {
+      profileId: "local",
+    });
   }
 
-  function handleOptionClick(e) {
+  function handleOptionClick(e: MouseEvent) {
     if (showMissingApiKeyMsg) {
       e.preventDefault();
       e.stopPropagation();
@@ -202,9 +203,9 @@ function ModelOption({
             </span>
           </div>
           <div className="ml-5 flex items-center">
-            <StyledCog6ToothIcon hovered={hovered} onClick={onClickGear} />
+            <StyledCog6ToothIcon $hovered={hovered} onClick={onClickGear} />
             {showDelete && (
-              <StyledTrashIcon hovered={hovered} onClick={onClickDelete} />
+              <StyledTrashIcon $hovered={hovered} onClick={onClickDelete} />
             )}
           </div>
         </div>
@@ -215,17 +216,15 @@ function ModelOption({
 
 function ModelSelect() {
   const dispatch = useDispatch();
-  const defaultModel = useSelector(defaultModelSelector);
-  const allModels = useSelector(
-    (state: RootState) => state.state.config.models,
-  );
+  const defaultModel = useAppSelector(selectDefaultModel);
+  const allModels = useAppSelector((state) => state.config.config.models);
   const ideMessenger = useContext(IdeMessengerContext);
   const [showAbove, setShowAbove] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [options, setOptions] = useState<Option[]>([]);
   const [sortedOptions, setSortedOptions] = useState<Option[]>([]);
-  const selectedProfileId = useSelector(
-    (store: RootState) => store.state.selectedProfileId,
+  const selectedProfileId = useAppSelector(
+    (store) => store.session.selectedProfileId,
   );
 
   // Sort so that options without an API key are at the end
@@ -265,7 +264,8 @@ function ModelSelect() {
         );
         let nextIndex = (currentIndex + 1 * direction) % options.length;
         if (nextIndex < 0) nextIndex = options.length - 1;
-        dispatch(setDefaultModel({ title: options[nextIndex].value }));
+        const newModelTitle = options[nextIndex].value;
+        dispatch(setDefaultModel({ title: newModelTitle }));
       }
     };
 
@@ -276,6 +276,9 @@ function ModelSelect() {
   }, [options, defaultModel]);
 
   function calculatePosition() {
+    if (!buttonRef.current) {
+      return;
+    }
     const rect = buttonRef.current.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom;
     const spaceAbove = rect.top;
@@ -284,7 +287,7 @@ function ModelSelect() {
     setShowAbove(spaceBelow < dropdownHeight && spaceAbove > spaceBelow);
   }
 
-  function onClickAddModel(e) {
+  function onClickAddModel(e: MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
 
@@ -309,11 +312,11 @@ function ModelSelect() {
       onChange={async (val: string) => {
         if (val === defaultModel?.title) return;
         dispatch(setDefaultModel({ title: val }));
-        await ideMessenger.request("update/modelChange", val);
       }}
     >
       <div className="relative">
         <StyledListboxButton
+          data-testid="model-select-button"
           ref={buttonRef}
           className="h-[18px] overflow-hidden"
           style={{ padding: 0 }}

@@ -10,7 +10,8 @@ const StyledCard = styled.div`
   margin: auto;
   border-radius: ${defaultBorderRadius};
   background-color: ${vscInputBackground};
-  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1),
+  box-shadow:
+    0 20px 25px -5px rgb(0 0 0 / 0.1),
     0 8px 10px -6px rgb(0 0 0 / 0.1);
 `;
 
@@ -19,9 +20,7 @@ export interface OnboardingCardState {
   activeTab?: TabTitle;
 }
 
-export type OnboardingCardProps = Pick<OnboardingCardState, "activeTab">;
-
-export function OnboardingCard(props: OnboardingCardProps) {
+export function OnboardingCard() {
   const onboardingCard = useOnboardingCard();
 
   function renderTabContent() {
@@ -33,7 +32,7 @@ export function OnboardingCard(props: OnboardingCardProps) {
       case "Local":
         return <Tabs.Local />;
       default:
-        return null;
+        return <Tabs.Quickstart />;
     }
   }
 
@@ -42,13 +41,16 @@ export function OnboardingCard(props: OnboardingCardProps) {
   }
 
   return (
-    <StyledCard className="relative px-2 py-3 xs:py-4 xs:px-4">
+    <StyledCard
+      className="xs:py-4 xs:px-4 relative px-2 py-3"
+      data-testid="onboarding-card"
+    >
       <OnboardingCardTabs
-        activeTab={onboardingCard.activeTab}
+        activeTab={onboardingCard.activeTab || "Best"}
         onTabClick={onboardingCard.setActiveTab}
       />
       <CloseButton onClick={onboardingCard.close}>
-        <XMarkIcon className="h-5 w-5 hidden sm:flex" />
+        <XMarkIcon className="mt-1.5 hidden h-5 w-5 hover:brightness-125 sm:flex" />
       </CloseButton>
       <div className="content py-4">{renderTabContent()}</div>
     </StyledCard>

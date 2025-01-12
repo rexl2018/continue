@@ -1,5 +1,6 @@
 package com.github.continuedev.continueintellijextension.activities
 
+import IntelliJIDE
 import com.github.continuedev.continueintellijextension.auth.AuthListener
 import com.github.continuedev.continueintellijextension.auth.ContinueAuthService
 import com.github.continuedev.continueintellijextension.auth.ControlPlaneSessionInfo
@@ -9,7 +10,7 @@ import com.github.continuedev.continueintellijextension.listeners.ContinuePlugin
 import com.github.continuedev.continueintellijextension.services.ContinueExtensionSettings
 import com.github.continuedev.continueintellijextension.services.ContinuePluginService
 import com.github.continuedev.continueintellijextension.services.SettingsListener
-import com.intellij.openapi.Disposable
+import com.github.continuedev.continueintellijextension.utils.toUriOrNull
 import com.intellij.openapi.actionSystem.KeyboardShortcut
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ApplicationNamesInfo
@@ -29,7 +30,13 @@ import java.nio.file.Paths
 import javax.swing.*
 import com.intellij.openapi.components.service
 import com.intellij.openapi.module.ModuleManager
+import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.roots.ModuleRootManager
+import com.intellij.openapi.vfs.VirtualFileManager
+import com.intellij.openapi.vfs.newvfs.BulkFileListener
+import com.intellij.openapi.vfs.newvfs.events.VFileEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileContentChangeEvent
 
 fun showTutorial(project: Project) {
     val tutorialFileName = getTutorialFileName()
@@ -65,8 +72,7 @@ private fun getTutorialFileName(): String {
     }
 }
 
-class ContinuePluginStartupActivity : StartupActivity, Disposable, DumbAware {
-    private val coroutineScope = CoroutineScope(Dispatchers.IO)
+class ContinuePluginStartupActivity : StartupActivity, DumbAware {
 
     override fun runActivity(project: Project) {
         removeShortcutFromAction(getPlatformSpecificKeyStroke("J"))
@@ -105,6 +111,7 @@ class ContinuePluginStartupActivity : StartupActivity, Disposable, DumbAware {
     }
 
     private fun initializePlugin(project: Project) {
+        val coroutineScope = CoroutineScope(Dispatchers.IO)
         val continuePluginService = ServiceManager.getService(
             project,
             ContinuePluginService::class.java
@@ -124,10 +131,12 @@ class ContinuePluginStartupActivity : StartupActivity, Disposable, DumbAware {
             val ideProtocolClient = IdeProtocolClient(
                 continuePluginService,
                 coroutineScope,
-                project.basePath,
                 project
             )
 
+            val diffManager = DiffManager(project)
+
+            continuePluginService.diffManager = diffManager
             continuePluginService.ideProtocolClient = ideProtocolClient
 
             // Listen to changes to settings so the core can reload remote configuration
@@ -145,6 +154,31 @@ class ContinuePluginStartupActivity : StartupActivity, Disposable, DumbAware {
                             )
                         )
                     )
+                }
+            })
+
+            // Handle file changes and deletions - reindex
+            connection.subscribe(VirtualFileManager.VFS_CHANGES, object : BulkFileListener {
+                override fun after(events: List<VFileEvent>) {
+                    // Collect all relevant URIs for deletions
+                    val deletedURIs = events.filterIsInstance<VFileDeleteEvent>()
+                        .mapNotNull { event -> event.file.toUriOrNull() }
+
+                    // Send "files/deleted" message if there are any deletions
+                    if (deletedURIs.isNotEmpty()) {
+                        val data = mapOf("files" to deletedURIs)
+                        continuePluginService.coreMessenger?.request("files/deleted", data, null) { _ -> }
+                    }
+
+                    // Collect all relevant URIs for content changes
+                    val changedURIs = events.filterIsInstance<VFileContentChangeEvent>()
+                        .mapNotNull { event -> event.file.toUriOrNull() }
+
+                    // Send "files/changed" message if there are any content changes
+                    if (changedURIs.isNotEmpty()) {
+                        val data = mapOf("files" to changedURIs)
+                        continuePluginService.coreMessenger?.request("files/changed", data, null) { _ -> }
+                    }
                 }
             })
 
@@ -186,28 +220,21 @@ class ContinuePluginStartupActivity : StartupActivity, Disposable, DumbAware {
             // Reload the WebView
             continuePluginService?.let { pluginService ->
                 val allModulePaths = ModuleManager.getInstance(project).modules
-                    .flatMap { module -> ModuleRootManager.getInstance(module).contentRoots.map { it.path } }
-                    .map { Paths.get(it).normalize() }
+                    .flatMap { module -> ModuleRootManager.getInstance(module).contentRoots.mapNotNull { it.toUriOrNull() } }
 
                 val topLevelModulePaths = allModulePaths
                     .filter { modulePath -> allModulePaths.none { it != modulePath && modulePath.startsWith(it) } }
-                    .map { it.toString() }
 
                 pluginService.workspacePaths = topLevelModulePaths.toTypedArray()
             }
 
             EditorFactory.getInstance().eventMulticaster.addSelectionListener(
                 listener,
-                this@ContinuePluginStartupActivity
+                ContinuePluginDisposable.getInstance(project)
             )
 
             val coreMessengerManager = CoreMessengerManager(project, ideProtocolClient, coroutineScope)
             continuePluginService.coreMessengerManager = coreMessengerManager
         }
-    }
-
-    override fun dispose() {
-        // Cleanup resources here
-        coroutineScope.cancel()
     }
 }

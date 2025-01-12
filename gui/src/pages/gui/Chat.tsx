@@ -4,77 +4,76 @@ import {
   CodeBracketSquareIcon,
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
-import { JSONContent } from "@tiptap/react";
-import { InputModifiers } from "core";
+import { Editor, JSONContent } from "@tiptap/react";
+import { InputModifiers, RangeInFileWithContents, ToolCallState } from "core";
+import { streamResponse } from "core/llm/stream";
+import { stripImages } from "core/util/messageContent";
 import { usePostHog } from "posthog-js/react";
-import {
-  Fragment,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { ErrorBoundary } from "react-error-boundary";
-import { useDispatch, useSelector } from "react-redux";
+import { useSelector } from "react-redux";
 import styled from "styled-components";
 import {
   Button,
   defaultBorderRadius,
   lightGray,
   vscBackground,
-  vscForeground,
 } from "../../components";
-import { ChatScrollAnchor } from "../../components/ChatScrollAnchor";
-import StepContainer from "../../components/gui/StepContainer";
+import CodeToEditCard from "../../components/CodeToEditCard";
+import FeedbackDialog from "../../components/dialogs/FeedbackDialog";
+import { useFindWidget } from "../../components/find/FindWidget";
 import TimelineItem from "../../components/gui/TimelineItem";
+import ChatIndexingPeeks from "../../components/indexing/ChatIndexingPeeks";
 import ContinueInputBox from "../../components/mainInput/ContinueInputBox";
-import { defaultInputModifiers } from "../../components/mainInput/inputModifiers";
+import { NewSessionButton } from "../../components/mainInput/NewSessionButton";
+import resolveEditorContent from "../../components/mainInput/resolveInput";
 import { TutorialCard } from "../../components/mainInput/TutorialCard";
 import {
   OnboardingCard,
   useOnboardingCard,
 } from "../../components/OnboardingCard";
+import PageHeader from "../../components/PageHeader";
+import StepContainer from "../../components/StepContainer";
+import AcceptRejectAllButtons from "../../components/StepContainer/AcceptRejectAllButtons";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
-import useChatHandler from "../../hooks/useChatHandler";
-import useHistory from "../../hooks/useHistory";
 import { useTutorialCard } from "../../hooks/useTutorialCard";
 import { useWebviewListener } from "../../hooks/useWebviewListener";
-import { defaultModelSelector } from "../../redux/selectors/modelSelectors";
+import { useAppDispatch, useAppSelector } from "../../redux/hooks";
+import { selectCurrentToolCall } from "../../redux/selectors/selectCurrentToolCall";
+import { selectDefaultModel } from "../../redux/slices/configSlice";
+import { submitEdit } from "../../redux/slices/editModeState";
 import {
-  clearLastResponse,
-  deleteMessage,
+  clearLastEmptyResponse,
   newSession,
+  selectIsInEditMode,
+  selectIsSingleRangeEditOrInsertion,
   setInactive,
-} from "../../redux/slices/stateSlice";
+} from "../../redux/slices/sessionSlice";
 import {
   setDialogEntryOn,
   setDialogMessage,
   setShowDialog,
-} from "../../redux/slices/uiStateSlice";
+} from "../../redux/slices/uiSlice";
 import { RootState } from "../../redux/store";
+import { cancelStream } from "../../redux/thunks/cancelStream";
+import { exitEditMode } from "../../redux/thunks/exitEditMode";
+import { streamResponseThunk } from "../../redux/thunks/streamResponse";
 import {
   getFontSize,
   getMetaKeyLabel,
-  isJetBrains,
   isMetaEquivalentKeyPressed,
 } from "../../util";
 import { FREE_TRIAL_LIMIT_REQUESTS } from "../../util/freeTrial";
+import getMultifileEditPrompt from "../../util/getMultifileEditPrompt";
 import { getLocalStorage, setLocalStorage } from "../../util/localStorage";
-
-const TopGuiDiv = styled.div<{
-  showScrollbar?: boolean;
-}>`
-  overflow-y: auto;
-  height: 100%;
-  scrollbar-width: ${(props) => (props.showScrollbar ? "thin" : "none")};
-
-  &::-webkit-scrollbar {
-    display: ${(props) => (props.showScrollbar ? "block" : "none")};
-  }
-`;
+import ConfigErrorIndicator from "./ConfigError";
+import { ToolCallDiv } from "./ToolCallDiv";
+import { ToolCallButtons } from "./ToolCallDiv/ToolCallButtonsDiv";
+import ToolOutput from "./ToolCallDiv/ToolOutput";
+import { loadLastSession } from "../../redux/thunks/session";
 
 const StopButton = styled.div`
+  background-color: ${vscBackground};
   width: fit-content;
   margin-right: auto;
   margin-left: auto;
@@ -84,11 +83,15 @@ const StopButton = styled.div`
   padding: 4px 8px;
   color: ${lightGray};
   cursor: pointer;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 4px 6px rgba(0, 0, 0, 0.1),
+    0 1px 3px rgba(0, 0, 0, 0.08);
   transition: box-shadow 0.3s ease;
 
   &:hover {
-    box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15), 0 3px 6px rgba(0, 0, 0, 0.1);
+    box-shadow:
+      0 6px 8px rgba(0, 0, 0, 0.15),
+      0 3px 6px rgba(0, 0, 0, 0.1);
   }
 `;
 
@@ -101,28 +104,8 @@ const StepsDiv = styled.div`
   }
 
   .thread-message {
-    margin: 8px 4px 0 4px;
+    margin: 0px 4px 0 4px;
   }
-`;
-
-const NewSessionButton = styled.div`
-  width: fit-content;
-  margin-right: auto;
-  margin-left: 6px;
-  margin-top: 2px;
-  margin-bottom: 8px;
-  font-size: ${getFontSize() - 2}px;
-
-  border-radius: ${defaultBorderRadius};
-  padding: 2px 6px;
-  color: ${lightGray};
-
-  &:hover {
-    background-color: ${lightGray}33;
-    color: ${vscForeground};
-  }
-
-  cursor: pointer;
 `;
 
 function fallbackRender({ error, resetErrorBoundary }: any) {
@@ -136,6 +119,7 @@ function fallbackRender({ error, resetErrorBoundary }: any) {
     >
       <p>Something went wrong:</p>
       <pre style={{ color: "red" }}>{error.message}</pre>
+      <pre style={{ color: lightGray }}>{error.stack}</pre>
 
       <div className="text-center">
         <Button onClick={resetErrorBoundary}>Restart</Button>
@@ -144,35 +128,93 @@ function fallbackRender({ error, resetErrorBoundary }: any) {
   );
 }
 
-export function Chat() {
-  const posthog = usePostHog();
-  const dispatch = useDispatch();
-  const ideMessenger = useContext(IdeMessengerContext);
-  const { streamResponse } = useChatHandler(dispatch, ideMessenger);
-  const onboardingCard = useOnboardingCard();
-  const { showTutorialCard, closeTutorialCard } = useTutorialCard();
-  const sessionState = useSelector((state: RootState) => state.state);
-  const defaultModel = useSelector(defaultModelSelector);
-  const ttsActive = useSelector((state: RootState) => state.state.ttsActive);
-  const active = useSelector((state: RootState) => state.state.active);
-  const [stepsOpen, setStepsOpen] = useState<(boolean | undefined)[]>([]);
-  const mainTextInputRef = useRef<HTMLInputElement>(null);
-  const topGuiDivRef = useRef<HTMLDivElement>(null);
-  const [isAtBottom, setIsAtBottom] = useState<boolean>(false);
-  const state = useSelector((state: RootState) => state.state);
-  const { saveSession, getLastSessionId, loadLastSession } =
-    useHistory(dispatch);
+const useAutoScroll = (
+  ref: React.RefObject<HTMLDivElement>,
+  history: unknown[],
+) => {
+  const [userHasScrolled, setUserHasScrolled] = useState(false);
 
   useEffect(() => {
-    if (!active || !topGuiDivRef.current) return;
+    if (history.length) {
+      setUserHasScrolled(false);
+    }
+  }, [history.length]);
 
-    const scrollAreaElement = topGuiDivRef.current;
+  useEffect(() => {
+    if (!ref.current || history.length === 0) return;
 
-    scrollAreaElement.scrollTop =
-      scrollAreaElement.scrollHeight - scrollAreaElement.clientHeight;
+    const handleScroll = () => {
+      const elem = ref.current;
+      if (!elem) return;
 
-    setIsAtBottom(true);
-  }, [active]);
+      const isAtBottom =
+        Math.abs(elem.scrollHeight - elem.scrollTop - elem.clientHeight) < 1;
+
+      /**
+       * We stop auto scrolling if a user manually scrolled up.
+       * We resume auto scrolling if a user manually scrolled to the bottom.
+       */
+      setUserHasScrolled(!isAtBottom);
+    };
+
+    const resizeObserver = new ResizeObserver(() => {
+      const elem = ref.current;
+      if (!elem || userHasScrolled) return;
+      elem.scrollTop = elem.scrollHeight;
+    });
+
+    ref.current.addEventListener("scroll", handleScroll);
+
+    // Observe the container
+    resizeObserver.observe(ref.current);
+
+    // Observe all immediate children
+    Array.from(ref.current.children).forEach((child) => {
+      resizeObserver.observe(child);
+    });
+
+    return () => {
+      resizeObserver.disconnect();
+      ref.current?.removeEventListener("scroll", handleScroll);
+    };
+  }, [ref, history.length, userHasScrolled]);
+};
+
+export function Chat() {
+  const posthog = usePostHog();
+  const dispatch = useAppDispatch();
+  const ideMessenger = useContext(IdeMessengerContext);
+  const onboardingCard = useOnboardingCard();
+  const { showTutorialCard, closeTutorialCard } = useTutorialCard();
+  const selectedModelTitle = useAppSelector(
+    (store) => store.config.defaultModelTitle,
+  );
+  const defaultModel = useAppSelector(selectDefaultModel);
+  const ttsActive = useAppSelector((state) => state.ui.ttsActive);
+  const isStreaming = useAppSelector((state) => state.session.isStreaming);
+  const [stepsOpen, setStepsOpen] = useState<(boolean | undefined)[]>([]);
+  const mainTextInputRef = useRef<HTMLInputElement>(null);
+  const stepsDivRef = useRef<HTMLDivElement>(null);
+  const history = useAppSelector((state) => state.session.history);
+  const showChatScrollbar = useAppSelector(
+    (state) => state.config.config.ui?.showChatScrollbar,
+  );
+  const codeToEdit = useAppSelector((state) => state.session.codeToEdit);
+  const toolCallState = useSelector<RootState, ToolCallState | undefined>(
+    selectCurrentToolCall,
+  );
+  const applyStates = useAppSelector(
+    (state) => state.session.codeBlockApplyStates.states,
+  );
+  const pendingApplyStates = applyStates.filter(
+    (state) => state.status === "done",
+  );
+  const hasPendingApplies = pendingApplyStates.length > 0;
+  const isInEditMode = useAppSelector(selectIsInEditMode);
+  const isSingleRangeEditOrInsertion = useAppSelector(
+    selectIsSingleRangeEditOrInsertion,
+  );
+  const lastSessionId = useAppSelector((state) => state.session.lastSessionId);
 
   useEffect(() => {
     // Cmd + Backspace to delete current step
@@ -182,7 +224,7 @@ export function Chat() {
         isMetaEquivalentKeyPressed(e) &&
         !e.shiftKey
       ) {
-        dispatch(setInactive());
+        dispatch(cancelStream());
       }
     };
     window.addEventListener("keydown", listener);
@@ -190,22 +232,17 @@ export function Chat() {
     return () => {
       window.removeEventListener("keydown", listener);
     };
-  }, [active]);
+  }, [isStreaming]);
 
-  const handleScroll = () => {
-    // Temporary fix to account for additional height when code blocks are added
-    const OFFSET_HERUISTIC = 300;
-    if (!topGuiDivRef.current) return;
-
-    const { scrollTop, scrollHeight, clientHeight } = topGuiDivRef.current;
-    const atBottom =
-      scrollHeight - clientHeight <= scrollTop + OFFSET_HERUISTIC;
-
-    setIsAtBottom(atBottom);
-  };
+  const { widget, highlights } = useFindWidget(stepsDivRef);
 
   const sendInput = useCallback(
-    (editorState: JSONContent, modifiers: InputModifiers) => {
+    (
+      editorState: JSONContent,
+      modifiers: InputModifiers,
+      index?: number,
+      editorToClearOnSend?: Editor,
+    ) => {
       if (defaultModel?.provider === "free-trial") {
         const u = getLocalStorage("ftc");
         if (u) {
@@ -225,71 +262,29 @@ export function Chat() {
         }
       }
 
-      streamResponse(editorState, modifiers, ideMessenger);
+      if (isSingleRangeEditOrInsertion) {
+        handleSingleRangeEditOrInsertion(editorState);
+        return;
+      }
+
+      const promptPreamble = isInEditMode
+        ? getMultifileEditPrompt(codeToEdit)
+        : undefined;
+
+      dispatch(
+        streamResponseThunk({ editorState, modifiers, promptPreamble, index }),
+      );
+
+      if (editorToClearOnSend) {
+        editorToClearOnSend.commands.clearContent();
+      }
 
       // Increment localstorage counter for popup
       const currentCount = getLocalStorage("mainTextEntryCounter");
       if (currentCount) {
         setLocalStorage("mainTextEntryCounter", currentCount + 1);
         if (currentCount === 300) {
-          dispatch(
-            setDialogMessage(
-              <div className="text-center p-4">
-                👋 Thanks for using Continue. We are always trying to improve
-                and love hearing from users. If you're interested in speaking,
-                enter your name and email. We won't use this information for
-                anything other than reaching out.
-                <br />
-                <br />
-                <form
-                  onSubmit={(e: any) => {
-                    e.preventDefault();
-                    posthog?.capture("user_interest_form", {
-                      name: e.target.elements[0].value,
-                      email: e.target.elements[1].value,
-                    });
-                    dispatch(
-                      setDialogMessage(
-                        <div className="text-center p-4">
-                          Thanks! We'll be in touch soon.
-                        </div>,
-                      ),
-                    );
-                  }}
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "10px",
-                  }}
-                >
-                  <input
-                    style={{ padding: "10px", borderRadius: "5px" }}
-                    type="text"
-                    name="name"
-                    placeholder="Name"
-                    required
-                  />
-                  <input
-                    style={{ padding: "10px", borderRadius: "5px" }}
-                    type="email"
-                    name="email"
-                    placeholder="Email"
-                    required
-                  />
-                  <button
-                    style={{
-                      padding: "10px",
-                      borderRadius: "5px",
-                      cursor: "pointer",
-                    }}
-                    type="submit"
-                  >
-                    Submit
-                  </button>
-                </form>
-              </div>,
-            ),
-          );
+          dispatch(setDialogMessage(<FeedbackDialog />));
           dispatch(setDialogEntryOn(false));
           dispatch(setShowDialog(true));
         }
@@ -298,233 +293,271 @@ export function Chat() {
       }
     },
     [
-      sessionState.history,
-      sessionState.contextItems,
+      history,
       defaultModel,
-      state,
       streamResponse,
+      isSingleRangeEditOrInsertion,
+      codeToEdit,
     ],
   );
+
+  async function handleSingleRangeEditOrInsertion(editorState: JSONContent) {
+    const [contextItems, __, userInstructions] = await resolveEditorContent({
+      editorState,
+      modifiers: {
+        noContext: true,
+        useCodebase: false,
+      },
+      ideMessenger,
+      defaultContextProviders: [],
+      dispatch,
+      selectedModelTitle,
+    });
+
+    const prompt = [
+      ...contextItems.map((item) => item.content),
+      stripImages(userInstructions),
+    ].join("\n\n");
+
+    ideMessenger.post("edit/sendPrompt", {
+      prompt,
+      range: codeToEdit[0] as RangeInFileWithContents,
+    });
+
+    dispatch(submitEdit(prompt));
+  }
 
   useWebviewListener(
     "newSession",
     async () => {
-      saveSession();
+      // unwrapResult(response) // errors if session creation failed
       mainTextInputRef.current?.focus?.();
     },
-    [saveSession],
+    [mainTextInputRef],
   );
 
   const isLastUserInput = useCallback(
     (index: number): boolean => {
-      return !state.history
+      return !history
         .slice(index + 1)
         .some((entry) => entry.message.role === "user");
     },
-    [state.history],
+    [history],
   );
+
+  const showScrollbar = showChatScrollbar || window.innerHeight > 5000;
+
+  useAutoScroll(stepsDivRef, history);
 
   return (
     <>
-      <TopGuiDiv
-        ref={topGuiDivRef}
-        onScroll={handleScroll}
-        showScrollbar={state.config.ui?.showChatScrollbar || false}
-      >
-        <div className="max-w-3xl m-auto">
-          <StepsDiv>
-            {state.history.map((item, index: number) => (
-              <Fragment key={item.message.id}>
-                <ErrorBoundary
-                  FallbackComponent={fallbackRender}
-                  onReset={() => {
-                    dispatch(newSession());
-                  }}
-                >
-                  {item.message.role === "user" ? (
-                    <ContinueInputBox
-                      onEnter={async (editorState, modifiers) => {
-                        streamResponse(
-                          editorState,
-                          modifiers,
-                          ideMessenger,
-                          index,
-                        );
-                      }}
-                      isLastUserInput={isLastUserInput(index)}
-                      isMainInput={false}
-                      editorState={item.editorState}
-                      contextItems={item.contextItems}
-                    />
-                  ) : (
-                    <div className="thread-message">
-                      <TimelineItem
-                        item={item}
-                        iconElement={
-                          false ? (
-                            <CodeBracketSquareIcon width="16px" height="16px" />
-                          ) : false ? (
-                            <ExclamationTriangleIcon
-                              width="16px"
-                              height="16px"
-                              color="red"
-                            />
-                          ) : (
-                            <ChatBubbleOvalLeftIcon
-                              width="16px"
-                              height="16px"
-                            />
-                          )
-                        }
-                        open={
-                          typeof stepsOpen[index] === "undefined"
-                            ? false
-                              ? false
-                              : true
-                            : stepsOpen[index]!
-                        }
-                        onToggle={() => {}}
-                      >
-                        <StepContainer
-                          index={index}
-                          isLast={index === sessionState.history.length - 1}
-                          isFirst={index === 0}
-                          open={
-                            typeof stepsOpen[index] === "undefined"
-                              ? true
-                              : stepsOpen[index]!
-                          }
-                          key={index}
-                          onUserInput={(input: string) => {}}
-                          item={item}
-                          onReverse={() => {}}
-                          onRetry={() => {
-                            streamResponse(
-                              state.history[index - 1].editorState,
-                              state.history[index - 1].modifiers ??
-                                defaultInputModifiers,
-                              ideMessenger,
-                              index - 1,
-                            );
-                          }}
-                          onContinueGeneration={() => {
-                            window.postMessage(
-                              {
-                                messageType: "userInput",
-                                data: {
-                                  input:
-                                    "Continue your response exactly where you left off:",
-                                },
-                              },
-                              "*",
-                            );
-                          }}
-                          onDelete={() => {
-                            dispatch(deleteMessage(index));
-                          }}
-                          modelTitle={item.promptLogs?.[0]?.modelTitle ?? ""}
-                        />
-                      </TimelineItem>
-                    </div>
-                  )}
-                </ErrorBoundary>
-              </Fragment>
-            ))}
-          </StepsDiv>
+      {isInEditMode && (
+        <PageHeader
+          title="Back to Chat"
+          onClick={async () => {
+            await dispatch(loadLastSession({ saveCurrentSession: false }));
+            dispatch(exitEditMode());
+          }}
+        />
+      )}
 
+      {widget}
+      <StepsDiv
+        ref={stepsDivRef}
+        className={`overflow-y-scroll pt-[8px] ${showScrollbar ? "thin-scrollbar" : "no-scrollbar"} ${history.length > 0 ? "flex-1" : ""}`}
+      >
+        {highlights}
+        {history.map((item, index: number) => (
+          <div
+            key={item.message.id}
+            style={{
+              minHeight: index === history.length - 1 ? "25vh" : 0,
+            }}
+          >
+            <ErrorBoundary
+              FallbackComponent={fallbackRender}
+              onReset={() => {
+                dispatch(newSession());
+              }}
+            >
+              {item.message.role === "user" ? (
+                <>
+                  {isInEditMode && index === 0 && <CodeToEditCard />}
+                  <ContinueInputBox
+                    isEditMode={isInEditMode}
+                    onEnter={(editorState, modifiers) =>
+                      sendInput(editorState, modifiers, index)
+                    }
+                    isLastUserInput={isLastUserInput(index)}
+                    isMainInput={false}
+                    editorState={item.editorState}
+                    contextItems={item.contextItems}
+                  />
+                </>
+              ) : item.message.role === "tool" ? (
+                <ToolOutput
+                  contextItems={item.contextItems}
+                  toolCallId={item.message.toolCallId}
+                />
+              ) : item.message.role === "assistant" &&
+                item.message.toolCalls &&
+                item.toolCallState ? (
+                <div>
+                  {item.message.toolCalls?.map((toolCall, i) => {
+                    return (
+                      <div key={i}>
+                        <ToolCallDiv
+                          toolCallState={item.toolCallState!}
+                          toolCall={toolCall}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="thread-message">
+                  <TimelineItem
+                    item={item}
+                    iconElement={
+                      false ? (
+                        <CodeBracketSquareIcon width="16px" height="16px" />
+                      ) : false ? (
+                        <ExclamationTriangleIcon
+                          width="16px"
+                          height="16px"
+                          color="red"
+                        />
+                      ) : (
+                        <ChatBubbleOvalLeftIcon width="16px" height="16px" />
+                      )
+                    }
+                    open={
+                      typeof stepsOpen[index] === "undefined"
+                        ? false
+                          ? false
+                          : true
+                        : stepsOpen[index]!
+                    }
+                    onToggle={() => {}}
+                  >
+                    <StepContainer
+                      index={index}
+                      isLast={index === history.length - 1}
+                      item={item}
+                    />
+                  </TimelineItem>
+                </div>
+              )}
+            </ErrorBoundary>
+          </div>
+        ))}
+      </StepsDiv>
+      <div className={`relative`}>
+        <div className="absolute -top-8 right-2 z-30">
+          {ttsActive && (
+            <StopButton
+              className=""
+              onClick={() => {
+                ideMessenger.post("tts/kill", undefined);
+              }}
+            >
+              ■ Stop TTS
+            </StopButton>
+          )}
+          {isStreaming && (
+            <StopButton
+              onClick={() => {
+                dispatch(setInactive());
+                dispatch(clearLastEmptyResponse());
+              }}
+            >
+              {getMetaKeyLabel()} ⌫ Cancel
+            </StopButton>
+          )}
+        </div>
+
+        {toolCallState?.status === "generated" && <ToolCallButtons />}
+
+        {isInEditMode && history.length === 0 && <CodeToEditCard />}
+
+        {isInEditMode && history.length > 0 ? null : (
           <ContinueInputBox
             isMainInput
+            isEditMode={isInEditMode}
             isLastUserInput={false}
-            hidden={active}
-            onEnter={(editorContent, modifiers) => {
-              sendInput(editorContent, modifiers);
-            }}
+            onEnter={(editorState, modifiers, editor) =>
+              sendInput(editorState, modifiers, undefined, editor)
+            }
           />
+        )}
 
-          {active ? (
-            <>
-              <br />
-              <br />
-            </>
-          ) : state.history.length > 0 ? (
-            <div className="mt-2 hidden xs:inline">
-              <NewSessionButton
-                onClick={() => {
-                  saveSession();
-                }}
-                className="mr-auto"
-              >
-                <span className="hidden xs:inline">
-                  New Session ({getMetaKeyLabel()} {isJetBrains() ? "J" : "L"})
-                </span>
-              </NewSessionButton>{" "}
-            </div>
-          ) : (
-            <>
-              {getLastSessionId() ? (
-                <div className="mt-2 hidden xs:inline">
+        <div
+          style={{
+            pointerEvents: isStreaming ? "none" : "auto",
+          }}
+        >
+          <div className="flex flex-row items-center justify-between pb-1 pl-0.5 pr-2">
+            <div className="xs:inline hidden">
+              {history.length === 0 && lastSessionId && !isInEditMode && (
+                <div className="xs:inline hidden">
                   <NewSessionButton
                     onClick={async () => {
-                      loadLastSession().catch((e) =>
-                        console.error(`Failed to load last session: ${e}`),
+                      await dispatch(
+                        loadLastSession({
+                          saveCurrentSession: true,
+                        }),
                       );
                     }}
-                    className="mr-auto flex items-center gap-2"
+                    className="flex items-center gap-2"
                   >
-                    <ArrowLeftIcon className="w-3 h-3" />
+                    <ArrowLeftIcon className="h-3 w-3" />
                     Last Session
                   </NewSessionButton>
                 </div>
-              ) : null}
+              )}
+            </div>
+            <ConfigErrorIndicator />
+          </div>
 
+          {hasPendingApplies && isSingleRangeEditOrInsertion && (
+            <AcceptRejectAllButtons
+              pendingApplyStates={pendingApplyStates}
+              onAcceptOrReject={async (outcome) => {
+                if (outcome === "acceptDiff") {
+                  await dispatch(
+                    loadLastSession({
+                      saveCurrentSession: false,
+                    }),
+                  );
+                  dispatch(exitEditMode());
+                }
+              }}
+            />
+          )}
+
+          {history.length === 0 && (
+            <>
               {onboardingCard.show && (
-                <div className="mt-10 mx-2">
-                  <OnboardingCard activeTab={onboardingCard.activeTab} />
+                <div className="mx-2 mt-10">
+                  <OnboardingCard />
                 </div>
               )}
 
               {showTutorialCard !== false && !onboardingCard.open && (
-                <div className="flex justify-center w-full">
+                <div className="flex w-full justify-center">
                   <TutorialCard onClose={closeTutorialCard} />
                 </div>
               )}
             </>
           )}
         </div>
+      </div>
 
-        <ChatScrollAnchor
-          scrollAreaRef={topGuiDivRef}
-          isAtBottom={isAtBottom}
-          trackVisibility={active}
-        />
-      </TopGuiDiv>
-
-      {ttsActive && (
-        <StopButton
-          className="mt-2 mb-4"
-          onClick={() => {
-            ideMessenger.post("tts/kill", undefined);
-          }}
-        >
-          ■ Stop TTS
-        </StopButton>
-      )}
-      {active && (
-        <StopButton
-          className="mt-auto mb-4"
-          onClick={() => {
-            dispatch(setInactive());
-            if (
-              state.history[state.history.length - 1]?.message.content
-                .length === 0
-            ) {
-              dispatch(clearLastResponse());
-            }
-          }}
-        >
-          {getMetaKeyLabel()} ⌫ Cancel
-        </StopButton>
-      )}
+      <div
+        className={`${history.length === 0 ? "h-full" : ""} flex flex-col justify-end`}
+      >
+        <ChatIndexingPeeks />
+      </div>
     </>
   );
 }

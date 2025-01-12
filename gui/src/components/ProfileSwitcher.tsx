@@ -18,13 +18,14 @@ import {
   vscListActiveBackground,
   vscListActiveForeground,
 } from ".";
+import { useAuth } from "../context/Auth";
 import { IdeMessengerContext } from "../context/IdeMessenger";
-import { useAuth } from "../hooks/useAuth";
 import { useWebviewListener } from "../hooks/useWebviewListener";
 import { setLastControlServerBetaEnabledStatus } from "../redux/slices/miscSlice";
 import { RootState } from "../redux/store";
 import { getFontSize } from "../util";
-import ButtonWithTooltip from "./ButtonWithTooltip";
+import HeaderButtonWithToolTip from "./gui/HeaderButtonWithToolTip";
+import { useAppSelector } from "../redux/hooks";
 
 const StyledListbox = styled(Listbox)`
   background-color: ${vscBackground};
@@ -129,12 +130,12 @@ function ProfileSwitcher() {
   const [profiles, setProfiles] = useState<ProfileDescription[]>([]);
 
   const dispatch = useDispatch();
-  const lastControlServerBetaEnabledStatus = useSelector(
-    (state: RootState) => state.misc.lastControlServerBetaEnabledStatus,
+  const lastControlServerBetaEnabledStatus = useAppSelector(
+    (state) => state.misc.lastControlServerBetaEnabledStatus,
   );
 
-  const selectedProfileId = useSelector(
-    (store: RootState) => store.state.selectedProfileId,
+  const selectedProfileId = useAppSelector(
+    (store) => store.session.selectedProfileId,
   );
 
   const [controlServerBetaEnabled, setControlServerBetaEnabled] =
@@ -193,7 +194,7 @@ function ProfileSwitcher() {
         <StyledListbox
           value={"GPT-4"}
           onChange={(id: string) => {
-            ideMessenger.request("didChangeSelectedProfile", { id });
+            ideMessenger.post("didChangeSelectedProfile", { id });
           }}
         >
           <div className="relative">
@@ -247,7 +248,7 @@ function ProfileSwitcher() {
 
       {controlServerBetaEnabled &&
         (session?.account ? (
-          <ButtonWithTooltip
+          <HeaderButtonWithToolTip
             tooltipPlacement="top-end"
             text={
               session.account.label === ""
@@ -257,15 +258,15 @@ function ProfileSwitcher() {
             onClick={logout}
           >
             <UserCircleIconSolid className="h-4 w-4" />
-          </ButtonWithTooltip>
+          </HeaderButtonWithToolTip>
         ) : (
-          <ButtonWithTooltip
+          <HeaderButtonWithToolTip
             tooltipPlacement="top-end"
             text="Click to login to Continue"
             onClick={login}
           >
             <UserCircleIconOutline className="h-4 w-4" />
-          </ButtonWithTooltip>
+          </HeaderButtonWithToolTip>
         ))}
     </>
   );

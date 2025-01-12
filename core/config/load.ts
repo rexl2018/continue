@@ -1,16 +1,12 @@
-import * as JSONC from "comment-json";
+import { execSync } from "child_process";
 import * as fs from "fs";
+import os from "os";
 import path from "path";
+
+import { fetchwithRequestOptions } from "@continuedev/fetch";
+import * as JSONC from "comment-json";
 import * as tar from "tar";
-import {
-  slashCommandFromDescription,
-  slashFromCustomCommand,
-} from "../commands/index.js";
-import CustomContextProviderClass from "../context/providers/CustomContextProvider";
-import FileContextProvider from "../context/providers/FileContextProvider";
-import { contextProviderClassFromName } from "../context/providers/index";
-import { AllRerankers } from "../context/rerankers/index";
-import { LLMReranker } from "../context/rerankers/llm";
+
 import {
   BrowserSerializedContinueConfig,
   Config,
@@ -24,50 +20,58 @@ import {
   IDE,
   IdeSettings,
   IdeType,
+  ILLM,
+  LLMOptions,
   ModelDescription,
-  Reranker,
   RerankerDescription,
   SerializedContinueConfig,
   SlashCommand,
 } from "..";
-import TransformersJsEmbeddingsProvider from "../indexing/embeddings/TransformersJsEmbeddingsProvider";
-import { allEmbeddingsProviders } from "../indexing/embeddings";
-import { BaseLLM } from "../llm";
-import CustomLLMClass from "../llm/llms/CustomLLM";
-import FreeTrial from "../llm/llms/FreeTrial";
-import { llmFromDescription } from "../llm/llms";
-import os from "os";
-import { execSync } from "child_process";
+import {
+  slashCommandFromDescription,
+  slashFromCustomCommand,
+} from "../commands/index.js";
+import { AllRerankers } from "../context/allRerankers";
+import { MCPManagerSingleton } from "../context/mcp";
 import CodebaseContextProvider from "../context/providers/CodebaseContextProvider";
 import ContinueProxyContextProvider from "../context/providers/ContinueProxyContextProvider";
-import { fetchwithRequestOptions } from "../util/fetchWithOptions";
+import CustomContextProviderClass from "../context/providers/CustomContextProvider";
+import FileContextProvider from "../context/providers/FileContextProvider";
+import { contextProviderClassFromName } from "../context/providers/index";
+import PromptFilesContextProvider from "../context/providers/PromptFilesContextProvider";
+import { allEmbeddingsProviders } from "../indexing/allEmbeddingsProviders";
+import { BaseLLM } from "../llm";
+import { llmFromDescription } from "../llm/llms";
+import CustomLLMClass from "../llm/llms/CustomLLM";
+import FreeTrial from "../llm/llms/FreeTrial";
+import { LLMReranker } from "../llm/llms/llm";
+import TransformersJsEmbeddingsProvider from "../llm/llms/TransformersJsEmbeddingsProvider";
+import { slashCommandFromPromptFileV1 } from "../promptFiles/v1/slashCommandFromPromptFile";
+import { getAllPromptFiles } from "../promptFiles/v2/getPromptFiles";
+import { allTools } from "../tools";
 import { copyOf } from "../util";
+import { GlobalContext } from "../util/GlobalContext";
 import mergeJson from "../util/merge";
 import {
   DEFAULT_CONFIG_TS_CONTENTS,
-  getConfigJsPath,
-  getConfigJsPathForRemote,
   getConfigJsonPath,
   getConfigJsonPathForRemote,
+  getConfigJsPath,
+  getConfigJsPathForRemote,
   getConfigTsPath,
   getContinueDotEnv,
   getEsbuildBinaryPath,
-  readAllGlobalPromptFiles,
 } from "../util/paths";
+
 import {
   defaultContextProvidersJetBrains,
   defaultContextProvidersVsCode,
   defaultSlashCommandsJetBrains,
   defaultSlashCommandsVscode,
 } from "./default";
-import {
-  DEFAULT_PROMPTS_FOLDER,
-  getPromptFiles,
-  slashCommandFromPromptFile,
-} from "./promptFile.js";
-import { validateConfig, ConfigValidationError } from "./validation.js";
-
-import { GlobalContext } from "../util/GlobalContext";
+import { getSystemPromptDotFile } from "./getSystemPromptDotFile";
+import { isSupportedLanceDbCpuTarget } from "./util";
+import { ConfigValidationError, validateConfig } from "./validation.js";
 
 export interface ConfigResult<T> {
   config: T | undefined;
@@ -109,6 +113,7 @@ function loadSerializedConfig(
   ideSettings: IdeSettings,
   ideType: IdeType,
   overrideConfigJson: SerializedContinueConfig | undefined,
+  ide: IDE,
 ): ConfigResult<SerializedContinueConfig> {
   const configPath = getConfigJsonPath(ideType);
   let config: SerializedContinueConfig = overrideConfigJson!;
@@ -132,6 +137,13 @@ function loadSerializedConfig(
 
   if (config.allowAnonymousTelemetry === undefined) {
     config.allowAnonymousTelemetry = true;
+  }
+
+  if (config.ui?.getChatTitles === undefined) {
+    config.ui = {
+      ...config.ui,
+      getChatTitles: true,
+    };
   }
 
   if (ideSettings.remoteConfigServerUrl) {
@@ -164,14 +176,18 @@ function loadSerializedConfig(
       ? [...defaultSlashCommandsVscode]
       : [...defaultSlashCommandsJetBrains];
 
+  if (!isSupportedLanceDbCpuTarget(ide)) {
+    config.disableIndexing = true;
+  }
+
   return { config, errors, configLoadInterrupted: false };
 }
 
 async function serializedToIntermediateConfig(
   initial: SerializedContinueConfig,
   ide: IDE,
-  loadPromptFiles: boolean = true,
 ): Promise<Config> {
+  // DEPRECATED - load custom slash commands
   const slashCommands: SlashCommand[] = [];
   for (const command of initial.slashCommands || []) {
     const newCommand = slashCommandFromDescription(command);
@@ -183,29 +199,18 @@ async function serializedToIntermediateConfig(
     slashCommands.push(slashFromCustomCommand(command));
   }
 
-  const workspaceDirs = await ide.getWorkspaceDirs();
-  const promptFolder = initial.experimental?.promptPath;
+  // DEPRECATED - load slash commands from v1 prompt files
+  // NOTE: still checking the v1 default .prompts folder for slash commands
+  const promptFiles = await getAllPromptFiles(
+    ide,
+    initial.experimental?.promptPath,
+    true,
+  );
 
-  if (loadPromptFiles) {
-    let promptFiles: { path: string; content: string }[] = [];
-    promptFiles = (
-      await Promise.all(
-        workspaceDirs.map((dir) =>
-          getPromptFiles(
-            ide,
-            path.join(dir, promptFolder ?? DEFAULT_PROMPTS_FOLDER),
-          ),
-        ),
-      )
-    )
-      .flat()
-      .filter(({ path }) => path.endsWith(".prompt"));
-
-    // Also read from ~/.continue/.prompts
-    promptFiles.push(...readAllGlobalPromptFiles());
-
-    for (const file of promptFiles) {
-      slashCommands.push(slashCommandFromPromptFile(file.path, file.content));
+  for (const file of promptFiles) {
+    const slashCommand = slashCommandFromPromptFileV1(file.path, file.content);
+    if (slashCommand) {
+      slashCommands.push(slashCommand);
     }
   }
 
@@ -238,8 +243,11 @@ async function intermediateToFinalConfig(
   uniqueId: string,
   writeLog: (log: string) => Promise<void>,
   workOsAccessToken: string | undefined,
+  loadPromptFiles: boolean = true,
   allowFreeTrial: boolean = true,
-): Promise<ContinueConfig> {
+): Promise<{ config: ContinueConfig; errors: ConfigValidationError[] }> {
+  const errors: ConfigValidationError[] = [];
+
   // Auto-detect models
   let models: BaseLLM[] = [];
   for (const desc of config.models) {
@@ -389,6 +397,7 @@ async function intermediateToFinalConfig(
   const DEFAULT_CONTEXT_PROVIDERS = [
     new FileContextProvider({}),
     new CodebaseContextProvider(codebaseContextParams),
+    ...(loadPromptFiles ? [new PromptFilesContextProvider({})] : []),
   ];
 
   const DEFAULT_CONTEXT_PROVIDERS_TITLES = DEFAULT_CONTEXT_PROVIDERS.map(
@@ -435,8 +444,12 @@ async function intermediateToFinalConfig(
       ) {
         config.embeddingsProvider = new embeddingsProviderClass();
       } else {
+        const llmOptions: LLMOptions = {
+          model: options.model ?? "UNSPECIFIED",
+          ...options,
+        };
         config.embeddingsProvider = new embeddingsProviderClass(
-          options,
+          llmOptions,
           (url: string | URL, init: any) =>
             fetchwithRequestOptions(url, init, {
               ...config.requestOptions,
@@ -452,7 +465,7 @@ async function intermediateToFinalConfig(
   }
 
   // Reranker
-  if (config.reranker && !(config.reranker as Reranker | undefined)?.rerank) {
+  if (config.reranker && !(config.reranker as ILLM | undefined)?.rerank) {
     const { name, params } = config.reranker as RerankerDescription;
     const rerankerClass = AllRerankers[name];
 
@@ -464,18 +477,62 @@ async function intermediateToFinalConfig(
         config.reranker = new LLMReranker(llm);
       }
     } else if (rerankerClass) {
-      config.reranker = new rerankerClass(params);
+      const llmOptions: LLMOptions = {
+        model: "rerank-2",
+        ...params,
+      };
+      config.reranker = new rerankerClass(llmOptions);
     }
   }
 
-  return {
+  let continueConfig: ContinueConfig = {
     ...config,
     contextProviders,
     models,
     embeddingsProvider: config.embeddingsProvider as any,
     tabAutocompleteModels,
     reranker: config.reranker as any,
+    tools: allTools,
   };
+
+  // Apply MCP if specified
+  const mcpManager = MCPManagerSingleton.getInstance();
+  if (config.experimental?.modelContextProtocolServers) {
+    await Promise.all(
+      config.experimental.modelContextProtocolServers?.map(
+        async (server, index) => {
+          const mcpId = index.toString();
+          const mcpConnection = mcpManager.createConnection(mcpId, server);
+          if (!mcpConnection) {
+            return;
+          }
+
+          const abortController = new AbortController();
+
+          try {
+            const mcpError = await mcpConnection.modifyConfig(
+              continueConfig,
+              mcpId,
+              abortController.signal,
+            );
+            if (mcpError) {
+              errors.push(mcpError);
+            }
+          } catch (e: any) {
+            errors.push({
+              fatal: false,
+              message: `Failed to load MCP server: ${e.message}`,
+            });
+            if (e.name !== "AbortError") {
+              throw e;
+            }
+          }
+        },
+      ) || [],
+    );
+  }
+
+  return { config: continueConfig, errors };
 }
 
 function finalToBrowserConfig(
@@ -508,9 +565,11 @@ function finalToBrowserConfig(
     disableIndexing: final.disableIndexing,
     disableSessionTitles: final.disableSessionTitles,
     userToken: final.userToken,
-    embeddingsProvider: final.embeddingsProvider?.id,
+    embeddingsProvider: final.embeddingsProvider?.embeddingId,
     ui: final.ui,
     experimental: final.experimental,
+    docs: final.docs,
+    tools: final.tools,
   };
 }
 
@@ -714,10 +773,16 @@ async function loadFullConfigNode(
     ideSettings,
     ideType,
     overrideConfigJson,
+    ide,
   );
 
   if (!serialized || configLoadInterrupted) {
     return { errors, config: undefined, configLoadInterrupted: true };
+  }
+
+  const systemPromptDotFile = await getSystemPromptDotFile(ide);
+  if (systemPromptDotFile) {
+    serialized.systemMessage = systemPromptDotFile;
   }
 
   // Convert serialized to intermediate config
@@ -779,21 +844,25 @@ async function loadFullConfigNode(
   }
 
   // Convert to final config format
-  const finalConfig = await intermediateToFinalConfig(
-    intermediate,
-    ide,
-    ideSettings,
-    uniqueId,
-    writeLog,
-    workOsAccessToken,
-  );
-  return { config: finalConfig, errors, configLoadInterrupted: false };
+  const { config: finalConfig, errors: finalErrors } =
+    await intermediateToFinalConfig(
+      intermediate,
+      ide,
+      ideSettings,
+      uniqueId,
+      writeLog,
+      workOsAccessToken,
+    );
+  return {
+    config: finalConfig,
+    errors: [...(errors ?? []), ...finalErrors],
+    configLoadInterrupted: false,
+  };
 }
 
 export {
   finalToBrowserConfig,
   intermediateToFinalConfig,
   loadFullConfigNode,
-  serializedToIntermediateConfig,
   type BrowserSerializedContinueConfig,
 };

@@ -109,14 +109,14 @@ class DiffStreamHandler(
             }
 
             updateProgressHighlighters(type)
-
-            // Since we only call onLastDiffLine() when we reach a "same" line, we need to handle the case where
-            // we reach EOF while in a diff block, since we won't encounter a "same" line.
-            if (curLine.index >= editor.document.lineCount - 1) {
-                curLine.diffBlock?.onLastDiffLine()
-            }
         } catch (e: Exception) {
-            println("Error handling diff line: ${curLine.index}, $type, $text, ${e.message}")
+            println(
+                "Error handling diff line - " +
+                        "Line index: ${curLine.index}, " +
+                        "Line type: $type, " +
+                        "Line text: $text, " +
+                        "Error message: ${e.message}"
+            )
         }
     }
 
@@ -125,7 +125,9 @@ class DiffStreamHandler(
 
         diffBlocks.remove(diffBlock)
 
-        if (!didAccept) {
+        if (didAccept) {
+            updatePositionsOnAccept(diffBlock.startLine)
+        } else {
             updatePositionsOnReject(diffBlock.startLine, diffBlock.addedLines.size, diffBlock.deletedLines.size)
         }
 
@@ -139,7 +141,7 @@ class DiffStreamHandler(
         val diffBlock = VerticalDiffBlock(
             editor, project, curLine.index, ::handleDiffBlockAcceptOrReject
         )
-        
+
         diffBlocks.add(diffBlock)
 
         return diffBlock
@@ -186,10 +188,16 @@ class DiffStreamHandler(
         }
     }
 
+    private fun updatePositionsOnAccept(startLine: Int) {
+        updatePositions(startLine, 0)
+    }
 
     private fun updatePositionsOnReject(startLine: Int, numAdditions: Int, numDeletions: Int) {
         val offset = -numAdditions + numDeletions
+        updatePositions(startLine, offset)
+    }
 
+    private fun updatePositions(startLine: Int, offset: Int) {
         diffBlocks.forEach { block ->
             if (block.startLine > startLine) {
                 block.updatePosition(block.startLine + offset)
@@ -251,9 +259,12 @@ class DiffStreamHandler(
     }
 
     private fun handleFinishedResponse() {
-        onFinish()
-
         ApplicationManager.getApplication().invokeLater {
+            // Since we only call onLastDiffLine() when we reach a "same" line, we need to handle the case where
+            // the last line in the diff stream is in the middle of a diff block.
+            curLine.diffBlock?.onLastDiffLine()
+
+            onFinish()
             cleanupProgressHighlighters()
         }
     }
@@ -267,9 +278,12 @@ class DiffStreamHandler(
     private fun handleDiffLineResponse(parsed: Map<*, *>) {
         val data = parsed["content"] as Map<*, *>
         val diffLineType = getDiffLineType(data["type"] as String)
+        val lineText = data["line"] as String
 
-        WriteCommandAction.runWriteCommandAction(project) {
-            handleDiffLine(diffLineType, data["line"] as String)
+        ApplicationManager.getApplication().invokeLater {
+            WriteCommandAction.runWriteCommandAction(project) {
+                handleDiffLine(diffLineType, lineText)
+            }
         }
     }
 
