@@ -491,19 +491,15 @@ export class VsCodeIdeUtils {
       }
     }
 
-    const fullDiff = diffs.join("\n\n");
-    if (fullDiff.trim() === "") {
-      console.log(`Diff empty for repos: ${repos}`);
-    }
-    return fullDiff;
+    return diffs.flatMap((diff) => this.splitDiff(diff));
   }
 
-  async getDiffForCurBranch(): Promise<string> {
+  async getDiffForCurBranch(): Promise<string[]> {
     let diffs: string[] = [];
     let repos = [];
 
     for (const dir of this.getWorkspaceDirectories()) {
-      const repo = await this.getRepo(vscode.Uri.file(dir));
+      const repo = await this.getRepo(dir);
       if (!repo) {
         continue;
       }
@@ -528,14 +524,10 @@ export class VsCodeIdeUtils {
       }
     }
 
-    const fullDiff = diffs.join("\n\n");
-    if (fullDiff.trim() === "") {
-      console.log(`Diff empty for repos: ${repos}`);
-    }
-    return fullDiff;
+    return diffs.flatMap((diff) => this.splitDiff(diff));
   }
 
-  async getDiffForCurFile(): Promise<string> {
+  async getDiffForCurFile(): Promise<string[]> {
     let diffs: string[] = [];
     let repos = [];
     let filesInEditor: string[] = [];
@@ -549,7 +541,7 @@ export class VsCodeIdeUtils {
       console.log(`filesInEditor: ${filesInEditor}`);
 
     for (const dir of this.getWorkspaceDirectories()) {
-      const repo = await this.getRepo(vscode.Uri.file(dir));
+      const repo = await this.getRepo(dir);
       if (!repo) {
         continue;
       }
@@ -577,11 +569,7 @@ export class VsCodeIdeUtils {
       }
     }
 
-    const fullDiff = diffs.join("\n\n");
-    if (fullDiff.trim() === "") {
-      console.log(`Diff empty for repos: ${repos}`);
-    }
-    return fullDiff;
+    return diffs.flatMap((diff) => this.splitDiff(diff));
   }
 
   getHighlightedCode(): RangeInFile[] {

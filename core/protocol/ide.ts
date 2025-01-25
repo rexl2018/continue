@@ -13,8 +13,8 @@ import type {
   Problem,
   Range,
   RangeInFile,
+  TerminalOptions,
   Thread,
-  TerminalOptions
 } from "../";
 
 export interface GetGhTokenArgs {
@@ -29,7 +29,7 @@ export type ToIdeFromWebviewOrCoreProtocol = {
   showVirtualFile: [{ name: string; content: string }, void];
   openFile: [{ path: string }, void];
   openUrl: [string, void];
-  runCommand: [{ command: string, options?: TerminalOptions }, void];
+  runCommand: [{ command: string; options?: TerminalOptions }, void];
   getSearchResults: [{ query: string }, string];
   subprocess: [{ command: string; cwd?: string }, [string, string]];
   saveFile: [{ filepath: string }, void];
@@ -60,9 +60,9 @@ export type ToIdeFromWebviewOrCoreProtocol = {
   getPinnedFiles: [undefined, string[]];
   showLines: [{ filepath: string; startLine: number; endLine: number }, void];
   readRangeInFile: [{ filepath: string; range: Range }, string];
-  getDiff: [{ includeUnstaged: boolean }, string];
-  getDiffForCurBranch: [undefined, string];
-  getDiffForCurFile: [undefined, string];
+  getDiff: [{ includeUnstaged: boolean }, string[]];
+  getDiffForCurBranch: [undefined, string[]];
+  getDiffForCurFile: [undefined, string[]];
   getWorkspaceConfigs: [undefined, ContinueRcJson[]];
   getTerminalContents: [undefined, string];
   getDebugLocals: [{ threadIndex: number }, string];
@@ -74,6 +74,8 @@ export type ToIdeFromWebviewOrCoreProtocol = {
   isTelemetryEnabled: [undefined, boolean];
   getUniqueId: [undefined, string];
   getTags: [string, IndexTag[]];
+  readSecrets: [{ keys: string[] }, Record<string, string>];
+  writeSecrets: [{ secrets: Record<string, string> }, void];
   // end methods from IDE type
 
   getIdeSettings: [undefined, IdeSettings];
@@ -94,7 +96,7 @@ export type ToIdeFromWebviewOrCoreProtocol = {
 
   getGitHubAuthToken: [GetGhTokenArgs, string | undefined];
   getControlPlaneSessionInfo: [
-    { silent: boolean },
+    { silent: boolean; useOnboarding: boolean },
     ControlPlaneSessionInfo | undefined,
   ];
   logoutOfControlPlane: [undefined, void];

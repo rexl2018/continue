@@ -21,6 +21,13 @@ import { GetGhTokenArgs } from "../protocol/ide.js";
 
 class FileSystemIde implements IDE {
   constructor(private readonly workspaceDir: string) {}
+
+  async readSecrets(keys: string[]): Promise<Record<string, string>> {
+    return {};
+  }
+
+  async writeSecrets(secrets: { [key: string]: string }): Promise<void> {}
+
   showToast(
     type: ToastType,
     message: string,
@@ -46,6 +53,7 @@ class FileSystemIde implements IDE {
       remoteConfigSyncPeriod: 60,
       userToken: "",
       enableControlServerBeta: false,
+      continueTestEnvironment: "none",
       pauseCodebaseIndexOnStart: false,
       enableDebugLogs: false,
     };
@@ -136,12 +144,12 @@ class FileSystemIde implements IDE {
     return Promise.resolve({ text: "", copiedAt: new Date().toISOString() });
   }
 
-  getDiffForCurBranch(): Promise<string> {
-    return Promise.resolve("");
+  getDiffForCurBranch(): Promise<string[]> {
+    return Promise.resolve([]);
   }
 
-  getDiffForCurFile(): Promise<string> {
-    return Promise.resolve("");
+  getDiffForCurFile(): Promise<string[]> {
+    return Promise.resolve([]);
   }
 
   getTerminalContents(): Promise<string> {
