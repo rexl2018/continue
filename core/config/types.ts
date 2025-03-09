@@ -958,7 +958,7 @@ declare global {
     fixGrammar?: string;
   }
   
-  interface ModelRoles {
+  interface ExperimentalModelRoles {
     inlineEdit?: string;
     applyCodeBlock?: string;
     repoMapFileSelection?: string;
@@ -1026,7 +1026,7 @@ declare global {
   
   interface ExperimentalConfig {
     contextMenuPrompts?: ContextMenuConfig;
-    modelRoles?: ModelRoles;
+    modelRoles?: ExperimentalModelRoles;
     defaultContext?: DefaultContextProvider[];
     promptPath?: string;
   
